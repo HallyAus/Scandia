@@ -2,19 +2,30 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect your Scandia fireplace",
-        "description": "Enter the local connection details for your fireplace. You need the device's IP address, its Tuya Device ID and Local Key. See the integration README for how to obtain the Local Key.",
+        "title": "Tuya cloud credentials",
+        "description": "Setup uses the Tuya cloud once to fetch your fireplace's local key; control then runs locally over your network. Enter your Tuya IoT project details. The Device ID is any device from your account (used to look up the project) — you'll pick the fireplace next. See the README for how to create the IoT project.",
         "data": {
-          "model": "Name / model",
+          "cloud_region": "Data centre / region",
+          "cloud_api_key": "Access ID / Client ID",
+          "cloud_api_secret": "Access Secret / Client Secret",
+          "device_id": "Sample Device ID"
+        }
+      },
+      "select_device": {
+        "title": "Select your fireplace",
+        "description": "Choose the fireplace from your account and enter its IP address (the cloud doesn't report it — find it in your router's device list, and reserve it so it doesn't change). The local key is fetched automatically.",
+        "data": {
+          "device_id": "Fireplace",
           "host": "IP address",
-          "device_id": "Device ID",
-          "local_key": "Local key",
           "protocol_version": "Tuya protocol version"
         }
       }
     },
     "error": {
-      "cannot_connect": "Could not reach the fireplace. Check the IP address, Device ID, Local Key and protocol version, and make sure Home Assistant is on the same network."
+      "cloud_error": "Could not reach the Tuya cloud. Check the region, Access ID and Access Secret, and that your IoT project has the Smart Home data source and a linked app account.",
+      "no_devices": "No devices were found on this Tuya account. Make sure your app account is linked to the IoT project.",
+      "no_local_key": "The Tuya cloud did not return a local key for this device. Try again in a few minutes, or check the IoT project linkage.",
+      "cannot_connect": "Could not reach the fireplace locally. Check the IP address and protocol version, ensure Home Assistant is on the same network, and fully close the Tuya app while testing."
     },
     "abort": {
       "already_configured": "This fireplace is already configured."

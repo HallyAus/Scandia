@@ -12,6 +12,9 @@ exposing:
 - **Number** — auto-off countdown timer
 - **Switch** — child lock
 
-You'll need the fireplace's **IP address**, **Device ID** and **Local Key**
-(see the README for how to obtain them with the `tinytuya` wizard). Data-point
-mappings are editable from the integration options if your firmware differs.
+Setup is **cloud-assisted but runs locally**: you enter your Tuya IoT project
+credentials once, the integration auto-fetches the fireplace's local key from
+the Tuya cloud (and re-fetches it automatically if it ever changes), then
+controls the fireplace over your LAN. You only supply the device's **IP
+address**. Data-point mappings are editable from the integration options if your
+firmware differs.

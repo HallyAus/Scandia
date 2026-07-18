@@ -12,7 +12,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .cloud import CloudError, TuyaCloud
 from .const import (
+    CONF_CLOUD_API_KEY,
+    CONF_CLOUD_API_SECRET,
+    CONF_CLOUD_REGION,
     CONF_DEVICE_ID,
     CONF_HOST,
     CONF_LOCAL_KEY,
@@ -24,6 +28,31 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _make_device(
+    device_id: str, host: str, local_key: str, protocol_version: str
+) -> tinytuya.Device:
+    """Create and configure a tinytuya device object."""
+    device = tinytuya.Device(device_id, host, local_key)
+    try:
+        device.set_version(float(protocol_version))
+    except (TypeError, ValueError):
+        device.set_version(float(DEFAULT_PROTOCOL_VERSION))
+    return device
+
+
+def test_local_connection(
+    device_id: str, host: str, local_key: str, protocol_version: str
+) -> dict[str, Any]:
+    """Attempt a local status read and return the raw dps. Runs in executor."""
+    device = _make_device(device_id, host, local_key, protocol_version)
+    device.set_socketTimeout(5)
+    data = device.status()
+    device.close()
+    if not isinstance(data, dict) or "dps" not in data:
+        raise ConnectionError(f"Unexpected response from fireplace: {data!r}")
+    return data["dps"]
 
 
 class ScandiaDevice:
@@ -42,11 +71,7 @@ class ScandiaDevice:
         protocol_version: str,
     ) -> None:
         """Initialise the underlying tinytuya device."""
-        self._device = tinytuya.Device(device_id, host, local_key)
-        try:
-            self._device.set_version(float(protocol_version))
-        except (TypeError, ValueError):
-            self._device.set_version(float(DEFAULT_PROTOCOL_VERSION))
+        self._device = _make_device(device_id, host, local_key, protocol_version)
         # Keep the connection open between polls for snappy updates.
         self._device.set_socketPersistent(True)
         self._device.set_socketTimeout(5)
@@ -82,8 +107,8 @@ class ScandiaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Set up the coordinator from a config entry."""
         self.entry = entry
-        options = {**entry.data, **entry.options}
-        scan_interval = options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        merged = {**entry.data, **entry.options}
+        scan_interval = merged.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
 
         self.device = ScandiaDevice(
             device_id=entry.data[CONF_DEVICE_ID],
@@ -93,6 +118,7 @@ class ScandiaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 CONF_PROTOCOL_VERSION, DEFAULT_PROTOCOL_VERSION
             ),
         )
+        self._refresh_attempted = False
 
         super().__init__(
             hass,
@@ -102,13 +128,67 @@ class ScandiaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch the latest data points from the fireplace."""
+        """Fetch the latest data points, refreshing the key if needed."""
         try:
-            return await self.hass.async_add_executor_job(self.device.status)
-        except UpdateFailed:
-            raise
-        except Exception as err:  # noqa: BLE001 - surface any local error
-            raise UpdateFailed(f"Error communicating with fireplace: {err}") from err
+            data = await self.hass.async_add_executor_job(self.device.status)
+        except Exception as first_err:  # noqa: BLE001
+            # A stale local key (e.g. after re-pairing in the app) looks like a
+            # connection failure. Try to pull a fresh key from the cloud once,
+            # then retry before giving up.
+            if not self._refresh_attempted and await self._async_refresh_local_key():
+                self._refresh_attempted = True
+                try:
+                    data = await self.hass.async_add_executor_job(self.device.status)
+                except Exception as retry_err:  # noqa: BLE001
+                    raise UpdateFailed(
+                        f"Error communicating with fireplace: {retry_err}"
+                    ) from retry_err
+            else:
+                raise UpdateFailed(
+                    f"Error communicating with fireplace: {first_err}"
+                ) from first_err
+
+        self._refresh_attempted = False
+        return data
+
+    async def _async_refresh_local_key(self) -> bool:
+        """Re-fetch the local key from the Tuya cloud. Returns True if changed."""
+        region = self.entry.data.get(CONF_CLOUD_REGION)
+        api_key = self.entry.data.get(CONF_CLOUD_API_KEY)
+        api_secret = self.entry.data.get(CONF_CLOUD_API_SECRET)
+        device_id = self.entry.data[CONF_DEVICE_ID]
+        if not (region and api_key and api_secret):
+            return False
+
+        try:
+            cloud = await self.hass.async_add_executor_job(
+                TuyaCloud, region, api_key, api_secret, device_id
+            )
+            device = await self.hass.async_add_executor_job(
+                cloud.get_device, device_id
+            )
+        except (CloudError, Exception) as err:  # noqa: BLE001
+            _LOGGER.debug("Could not refresh local key from cloud: %s", err)
+            return False
+
+        new_key = (device or {}).get("key")
+        if not new_key or new_key == self.entry.data[CONF_LOCAL_KEY]:
+            return False
+
+        _LOGGER.info("Refreshed local key for %s from Tuya cloud", device_id)
+        self.hass.config_entries.async_update_entry(
+            self.entry, data={**self.entry.data, CONF_LOCAL_KEY: new_key}
+        )
+        await self.hass.async_add_executor_job(self.device.close)
+        self.device = ScandiaDevice(
+            device_id=device_id,
+            host=self.entry.data[CONF_HOST],
+            local_key=new_key,
+            protocol_version=self.entry.data.get(
+                CONF_PROTOCOL_VERSION, DEFAULT_PROTOCOL_VERSION
+            ),
+        )
+        return True
 
     async def async_set_dp(self, dp: str, value: Any) -> None:
         """Set a data point then refresh so entities reflect the new state."""

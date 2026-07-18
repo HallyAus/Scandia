@@ -14,7 +14,12 @@ from homeassistant.core import HomeAssistant
 
 from . import ScandiaConfigEntry
 
-TO_REDACT = {"local_key", "device_id"}
+TO_REDACT = {
+    "local_key",
+    "device_id",
+    "cloud_api_key",
+    "cloud_api_secret",
+}
 
 
 async def async_get_config_entry_diagnostics(

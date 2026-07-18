@@ -10,9 +10,11 @@ The Scandia Aurora fires are Tuya-based devices that you normally control from
 the **Scandia Aurora Wi-Fi** app (a re-branded Tuya/Smart Life app). This
 integration replaces that app for day-to-day control inside Home Assistant.
 
-> ℹ️ You still pair the fireplace with the Tuya/Smart Life app **once** to
-> obtain its credentials (Device ID + Local Key). After that, everything runs
-> locally.
+> ℹ️ Setup is **cloud-assisted but runs locally**: you enter your Tuya IoT
+> credentials once, the integration pulls the fireplace's **Local Key**
+> automatically from the Tuya cloud, and from then on all control happens over
+> your LAN. It even re-fetches the key from the cloud automatically if it
+> changes (e.g. after re-pairing), so the connection self-heals.
 
 ## Features
 
@@ -45,49 +47,55 @@ Copy `custom_components/scandia_fireplace` into your Home Assistant
 
 ## What you need before adding it
 
-Local Tuya control requires three things about your fireplace:
+You need a **Tuya IoT Platform project** (free) linked to your Scandia Aurora /
+Smart Life / Tuya app account. This is what lets the integration read your
+fireplace's local key from the cloud. You do **not** run any wizard or copy the
+local key by hand — the integration does that for you.
 
-- **IP address** — assign the fireplace a static/reserved IP in your router.
-- **Device ID** — a per-device identifier from Tuya.
-- **Local Key** — the per-device encryption key used for local control.
-
-### Getting the Device ID and Local Key
-
-The simplest method uses the built-in **`tinytuya` wizard** (this integration
-already depends on `tinytuya`, and you can run it from any machine with Python):
+### One-time Tuya IoT project setup
 
 1. Make sure the fireplace is already added to the **Scandia Aurora / Smart
-   Life / Tuya** app.
-2. Create a free **Tuya IoT Platform** account at
-   <https://iot.tuya.com>, create a **Cloud project** (Smart Home, data centre
-   matching your region), and **link your app account** under
-   *Devices → Link Tuya App Account*.
-3. On your computer run:
-   ```bash
-   pip install tinytuya
-   python -m tinytuya wizard
-   ```
-   Enter your Cloud project's **API Key**, **API Secret** and the region. The
-   wizard writes a `devices.json` / `snapshot.json` containing every device's
-   **`id`** (Device ID), **`key`** (Local Key) and **`ip`**.
+   Life / Tuya** app and working there.
+2. Create a free account at the **Tuya IoT Platform**
+   (<https://iot.tuya.com>).
+3. Create a **Cloud project**:
+   - Development method: **Smart Home**
+   - Data centre: the region closest to you (for Australia, usually
+     **Western America** → region `us`, sometimes **Central Europe** → `eu`).
+   - After creation, note the project's **Access ID / Client ID** and
+     **Access Secret / Client Secret**.
+4. Under the project's **Devices → Link Tuya App Account**, scan the QR code
+   with your Scandia/Smart Life app (**Me → ⚙ → scan**) to link your account.
+   Your fireplace now appears under the project's linked devices.
+5. Grab any one **Device ID** from the app (**device → ✏ / Device Information →
+   Virtual ID**) — the integration only needs it to look up your project; you'll
+   pick the actual fireplace from a list during setup.
 
-Other tools that can extract the Local Key include the community **tuya-cloudcutter**
-project and the **Tuya IoT platform → Device → Debug Device** view.
-
-> 🔑 The Local Key **changes if you re-pair the fireplace** in the app. If the
-> integration suddenly can't connect, re-run the wizard and update the key via
-> **Settings → Devices & services → Scandia Fireplace → Configure**.
+> 🔑 You never handle the local key. If it ever changes (re-pairing the
+> fireplace resets it), the integration detects the failed connection and pulls
+> the new key from the cloud automatically.
 
 ## Setup
 
-When adding the integration you'll be asked for:
+When adding the integration you'll go through two quick steps:
 
-- **Name / model** — e.g. `Scandia Aurora 74`.
-- **IP address**, **Device ID**, **Local Key**.
-- **Tuya protocol version** — most Scandia units are **3.3**. If the connection
-  test fails, try 3.4 or 3.5.
+**Step 1 — Tuya cloud credentials**
+- **Region** — your project's data centre (try `us` first for Australia).
+- **Access ID / Client ID** and **Access Secret / Client Secret** — from your
+  IoT project.
+- **Sample Device ID** — any device from your account.
 
-The integration verifies it can read the device before finishing.
+The integration then lists every device on the account.
+
+**Step 2 — Select your fireplace**
+- **Fireplace** — pick it from the dropdown. Its local key and protocol version
+  are filled in automatically.
+- **IP address** — the cloud can't report this, so enter the fireplace's LAN IP
+  (find it in your router's device list, and reserve it so it won't change).
+- **Tuya protocol version** — pre-filled from the cloud; most Scandia units are
+  **3.3**. If the local test fails, try 3.4 or 3.5.
+
+The integration verifies it can reach the fireplace locally before finishing.
 
 ## Data points (advanced)
 
@@ -122,10 +130,14 @@ If some controls are missing or behave oddly:
 
 ## Troubleshooting
 
-- **`cannot_connect` when adding** — verify the IP, Device ID and Local Key,
-  confirm Home Assistant is on the same subnet as the fireplace, and try a
-  different protocol version. Only **one** local connection is allowed at a
-  time, so fully close the Tuya app while testing.
+- **`cloud_error` / no devices** — check the region, Access ID and Access
+  Secret, and that your IoT project uses the **Smart Home** data source with
+  your app account linked. Newly created projects can take a few minutes before
+  the API returns devices.
+- **`cannot_connect` when selecting the device** — verify the IP, confirm Home
+  Assistant is on the same subnet as the fireplace, and try a different protocol
+  version. Only **one** local connection is allowed at a time, so fully close
+  the Tuya app while testing.
 - **Connection drops after using the app** — the Tuya app can grab the single
   local session. It should recover on the next poll; if not, reload the entry.
 - **Values look wrong / controls missing** — re-map the DPs from diagnostics as

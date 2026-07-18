@@ -1,11 +1,16 @@
-"""Config and options flow for the Scandia Fireplace integration."""
+"""Config and options flow for the Scandia Fireplace integration.
+
+Setup is cloud-assisted but the running integration is local: the user supplies
+their Tuya IoT project credentials once, the flow pulls every device's local key
+and protocol version from the Tuya cloud, and the fireplace is then controlled
+directly over the LAN.
+"""
 
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-import tinytuya
 import voluptuous as vol
 
 from homeassistant.config_entries import (
@@ -19,13 +24,19 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
     TextSelector,
 )
 
+from .cloud import CloudError, TuyaCloud
 from .const import (
+    CLOUD_REGIONS,
+    CONF_CLOUD_API_KEY,
+    CONF_CLOUD_API_SECRET,
+    CONF_CLOUD_REGION,
     CONF_DEVICE_ID,
     CONF_DP_CHILD_LOCK,
     CONF_DP_CURRENT_TEMP,
@@ -43,6 +54,7 @@ from .const import (
     CONF_MODEL,
     CONF_PROTOCOL_VERSION,
     CONF_SCAN_INTERVAL,
+    DEFAULT_CLOUD_REGION,
     DEFAULT_DP_CHILD_LOCK,
     DEFAULT_DP_CURRENT_TEMP,
     DEFAULT_DP_FLAME_BRIGHTNESS,
@@ -59,78 +71,144 @@ from .const import (
     DOMAIN,
     PROTOCOL_VERSIONS,
 )
+from .coordinator import test_local_connection
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _test_connection(
-    device_id: str, host: str, local_key: str, protocol_version: str
-) -> dict[str, Any]:
-    """Attempt a local status read. Runs in the executor.
-
-    Returns the reported ``dps`` mapping, or raises to signal failure.
-    """
-    device = tinytuya.Device(device_id, host, local_key)
-    device.set_version(float(protocol_version))
-    device.set_socketTimeout(5)
-    data = device.status()
-    device.close()
-    if not isinstance(data, dict) or "dps" not in data:
-        raise CannotConnect(str(data))
-    return data["dps"]
-
-
-class CannotConnect(Exception):
-    """Error to indicate we cannot reach the fireplace locally."""
+def _normalise_version(raw: Any) -> str:
+    """Coerce a cloud-reported protocol version to a supported string."""
+    version = str(raw).strip() if raw is not None else ""
+    return version if version in PROTOCOL_VERSIONS else DEFAULT_PROTOCOL_VERSION
 
 
 class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle the initial setup of a Scandia fireplace."""
+    """Cloud-assisted setup for a Scandia fireplace."""
 
     VERSION = 1
+
+    def __init__(self) -> None:
+        """Hold state between the credential and device-selection steps."""
+        self._cloud_creds: dict[str, str] = {}
+        self._devices: list[dict[str, Any]] = []
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Collect connection details and verify the device is reachable."""
+        """Collect Tuya IoT credentials and list the account's devices."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            device_id = user_input[CONF_DEVICE_ID].strip()
-            await self.async_set_unique_id(device_id)
-            self._abort_if_unique_id_configured()
+            region = user_input[CONF_CLOUD_REGION]
+            api_key = user_input[CONF_CLOUD_API_KEY].strip()
+            api_secret = user_input[CONF_CLOUD_API_SECRET].strip()
+            sample_id = user_input[CONF_DEVICE_ID].strip()
 
             try:
-                await self.hass.async_add_executor_job(
-                    _test_connection,
-                    device_id,
-                    user_input[CONF_HOST].strip(),
-                    user_input[CONF_LOCAL_KEY].strip(),
-                    user_input[CONF_PROTOCOL_VERSION],
+                cloud = await self.hass.async_add_executor_job(
+                    TuyaCloud, region, api_key, api_secret, sample_id
                 )
+                devices = await self.hass.async_add_executor_job(cloud.list_devices)
+            except CloudError as err:
+                _LOGGER.warning("Tuya cloud error: %s", err)
+                errors["base"] = "cloud_error"
             except Exception as err:  # noqa: BLE001 - map any failure to a form error
-                _LOGGER.warning("Could not connect to fireplace: %s", err)
-                errors["base"] = "cannot_connect"
+                _LOGGER.warning("Unexpected cloud error: %s", err)
+                errors["base"] = "cloud_error"
             else:
-                return self.async_create_entry(
-                    title=user_input.get(CONF_MODEL) or "Scandia Fireplace",
-                    data={
-                        CONF_MODEL: user_input.get(CONF_MODEL, ""),
-                        CONF_DEVICE_ID: device_id,
-                        CONF_HOST: user_input[CONF_HOST].strip(),
-                        CONF_LOCAL_KEY: user_input[CONF_LOCAL_KEY].strip(),
-                        CONF_PROTOCOL_VERSION: user_input[CONF_PROTOCOL_VERSION],
-                    },
-                )
+                if not devices:
+                    errors["base"] = "no_devices"
+                else:
+                    self._cloud_creds = {
+                        CONF_CLOUD_REGION: region,
+                        CONF_CLOUD_API_KEY: api_key,
+                        CONF_CLOUD_API_SECRET: api_secret,
+                    }
+                    self._devices = devices
+                    return await self.async_step_select_device()
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_MODEL, default="Scandia Aurora 74"): TextSelector(),
-                vol.Required(CONF_HOST): TextSelector(),
-                vol.Required(CONF_DEVICE_ID): TextSelector(),
-                vol.Required(CONF_LOCAL_KEY): TextSelector(),
                 vol.Required(
-                    CONF_PROTOCOL_VERSION, default=DEFAULT_PROTOCOL_VERSION
+                    CONF_CLOUD_REGION, default=DEFAULT_CLOUD_REGION
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=CLOUD_REGIONS, mode=SelectSelectorMode.DROPDOWN
+                    )
+                ),
+                vol.Required(CONF_CLOUD_API_KEY): TextSelector(),
+                vol.Required(CONF_CLOUD_API_SECRET): TextSelector(),
+                vol.Required(CONF_DEVICE_ID): TextSelector(),
+            }
+        )
+        return self.async_show_form(
+            step_id="user", data_schema=schema, errors=errors
+        )
+
+    async def async_step_select_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Pick the fireplace, confirm its IP, and verify local control."""
+        errors: dict[str, str] = {}
+
+        devices_by_id = {d["id"]: d for d in self._devices if d.get("id")}
+
+        if user_input is not None:
+            device_id = user_input[CONF_DEVICE_ID]
+            device = devices_by_id.get(device_id, {})
+            local_key = device.get("key", "")
+            host = user_input[CONF_HOST].strip()
+            version = user_input[CONF_PROTOCOL_VERSION]
+
+            await self.async_set_unique_id(device_id)
+            self._abort_if_unique_id_configured()
+
+            if not local_key:
+                errors["base"] = "no_local_key"
+            else:
+                try:
+                    await self.hass.async_add_executor_job(
+                        test_local_connection, device_id, host, local_key, version
+                    )
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.warning("Could not connect locally: %s", err)
+                    errors["base"] = "cannot_connect"
+                else:
+                    return self.async_create_entry(
+                        title=device.get("name") or "Scandia Fireplace",
+                        data={
+                            CONF_MODEL: device.get("name", ""),
+                            CONF_DEVICE_ID: device_id,
+                            CONF_HOST: host,
+                            CONF_LOCAL_KEY: local_key,
+                            CONF_PROTOCOL_VERSION: version,
+                            **self._cloud_creds,
+                        },
+                    )
+
+        options = [
+            SelectOptionDict(
+                value=d["id"], label=f"{d.get('name', 'Device')} ({d['id']})"
+            )
+            for d in self._devices
+            if d.get("id")
+        ]
+
+        # Pre-fill the protocol version from the first/selected device.
+        selected = user_input.get(CONF_DEVICE_ID) if user_input else None
+        default_device = devices_by_id.get(selected) if selected else self._devices[0]
+        default_version = _normalise_version(default_device.get("version"))
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_DEVICE_ID): SelectSelector(
+                    SelectSelectorConfig(
+                        options=options, mode=SelectSelectorMode.DROPDOWN
+                    )
+                ),
+                vol.Required(CONF_HOST): TextSelector(),
+                vol.Required(
+                    CONF_PROTOCOL_VERSION, default=default_version
                 ): SelectSelector(
                     SelectSelectorConfig(
                         options=PROTOCOL_VERSIONS, mode=SelectSelectorMode.DROPDOWN
@@ -139,7 +217,7 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
             }
         )
         return self.async_show_form(
-            step_id="user", data_schema=schema, errors=errors
+            step_id="select_device", data_schema=schema, errors=errors
         )
 
     @staticmethod

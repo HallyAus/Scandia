@@ -13,6 +13,16 @@ CONF_HOST: Final = "host"
 CONF_PROTOCOL_VERSION: Final = "protocol_version"
 CONF_MODEL: Final = "model"
 
+# Tuya cloud credentials (used to auto-fetch the local key, and to refresh it
+# automatically if it changes after re-pairing).
+CONF_CLOUD_REGION: Final = "cloud_region"
+CONF_CLOUD_API_KEY: Final = "cloud_api_key"
+CONF_CLOUD_API_SECRET: Final = "cloud_api_secret"
+
+# Tuya cloud data-centre regions supported by tinytuya.
+CLOUD_REGIONS: Final = ["us", "us-e", "eu", "eu-w", "cn", "in", "sg"]
+DEFAULT_CLOUD_REGION: Final = "us"
+
 # Options / data-point mapping keys
 CONF_DP_POWER: Final = "dp_power"
 CONF_DP_HEAT: Final = "dp_heat"
