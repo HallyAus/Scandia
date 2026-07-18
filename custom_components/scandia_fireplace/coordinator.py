@@ -12,7 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .cloud import CloudError, TuyaCloud
+from .cloud import TuyaCloud
 from .const import (
     CONF_CLOUD_API_KEY,
     CONF_CLOUD_API_SECRET,
@@ -167,7 +167,7 @@ class ScandiaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             device = await self.hass.async_add_executor_job(
                 cloud.get_device, device_id
             )
-        except (CloudError, Exception) as err:  # noqa: BLE001
+        except Exception as err:  # noqa: BLE001 - cloud refresh is best-effort
             _LOGGER.debug("Could not refresh local key from cloud: %s", err)
             return False
 

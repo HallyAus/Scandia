@@ -18,21 +18,30 @@ _LOGGER = logging.getLogger(__name__)
 DEFAULT_SCAN_SECONDS = 8
 
 
-def scan_lan(scantime: int = DEFAULT_SCAN_SECONDS) -> dict[str, str]:
-    """Return a mapping of ``device_id -> ip`` for devices found on the LAN."""
+def scan_lan(scantime: int = DEFAULT_SCAN_SECONDS) -> dict[str, dict[str, str]]:
+    """Discover Tuya devices on the LAN.
+
+    Returns a mapping of ``device_id -> {"ip": ..., "version": ...}``. The IP
+    and (authoritative) protocol version come from the device's own broadcast,
+    so both can be pre-filled during setup. Empty on failure.
+    """
     try:
         found = tinytuya.deviceScan(False, scantime)
     except Exception as err:  # noqa: BLE001 - discovery is best-effort
         _LOGGER.debug("Tuya LAN scan failed: %s", err)
         return {}
 
-    result: dict[str, str] = {}
+    result: dict[str, dict[str, str]] = {}
     if isinstance(found, dict):
         for ip, info in found.items():
             if not isinstance(info, dict):
                 continue
             device_id = info.get("id") or info.get("gwId")
-            if device_id:
-                result[device_id] = info.get("ip") or ip
+            if not device_id:
+                continue
+            entry: dict[str, str] = {"ip": info.get("ip") or ip}
+            if info.get("version"):
+                entry["version"] = str(info["version"])
+            result[device_id] = entry
     _LOGGER.debug("Tuya LAN scan discovered %d device(s)", len(result))
     return result

@@ -149,6 +149,9 @@ If some controls are missing or behave oddly:
   the Tuya app while testing.
 - **Connection drops after using the app** — the Tuya app can grab the single
   local session. It should recover on the next poll; if not, reload the entry.
+- **Fireplace got a new IP** — open the integration entry → **⋮ → Reconfigure**
+  to update the IP (it's re-detected from the LAN automatically). Reserving the
+  IP in your router avoids this entirely.
 - **Values look wrong / controls missing** — re-map the DPs from diagnostics as
   described above.
 

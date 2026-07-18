@@ -19,6 +19,14 @@
           "host": "IP address (auto-detected)",
           "protocol_version": "Tuya protocol version"
         }
+      },
+      "reconfigure": {
+        "title": "Update fireplace connection",
+        "description": "Update the fireplace's IP address or protocol version — useful if its IP changed. The IP is re-detected from the LAN where possible. Your cloud credentials and local key are kept.",
+        "data": {
+          "host": "IP address",
+          "protocol_version": "Tuya protocol version"
+        }
       }
     },
     "error": {
@@ -29,10 +37,14 @@
       "cannot_connect": "Could not reach the fireplace locally. Check the IP address and protocol version, ensure Home Assistant is on the same network, and fully close the Tuya app while testing."
     },
     "abort": {
-      "already_configured": "This fireplace is already configured."
+      "already_configured": "This fireplace is already configured.",
+      "reconfigure_successful": "The fireplace connection was updated."
     }
   },
   "options": {
+    "error": {
+      "temp_range": "The minimum temperature must be lower than the maximum temperature."
+    },
     "step": {
       "init": {
         "title": "Scandia fireplace data points",

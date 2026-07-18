@@ -1,9 +1,9 @@
 """Config and options flow for the Scandia Fireplace integration.
 
 Setup is cloud-assisted but the running integration is local: the user supplies
-their Tuya IoT project credentials once, the flow pulls every device's local key
-and protocol version from the Tuya cloud, and the fireplace is then controlled
-directly over the LAN.
+their Tuya IoT project credentials once, the flow pulls the device's local key
+from the Tuya cloud, auto-detects its IP and protocol version from the LAN
+broadcast, and the fireplace is then controlled directly over the LAN.
 """
 
 from __future__ import annotations
@@ -92,7 +92,7 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
         """Hold state between the credential and device-selection steps."""
         self._cloud_creds: dict[str, str] = {}
         self._devices: list[dict[str, Any]] = []
-        self._discovered: dict[str, str] = {}
+        self._discovered: dict[str, dict[str, str]] = {}
         self._scanned = False
 
     async def async_step_user(
@@ -167,8 +167,8 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
             local_key = device.get("key", "")
             # Fall back to the auto-discovered IP if the field was left blank.
             host = user_input.get(CONF_HOST, "").strip() or self._discovered.get(
-                device_id, ""
-            )
+                device_id, {}
+            ).get("ip", "")
             version = user_input[CONF_PROTOCOL_VERSION]
 
             await self.async_set_unique_id(device_id)
@@ -207,15 +207,20 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
             if d.get("id")
         ]
 
-        # Pre-fill the protocol version and IP from the first/selected device.
+        # Pre-fill the IP and protocol version from the first/selected device.
+        # The LAN broadcast reports the authoritative protocol version; the
+        # cloud does not, so prefer the discovered value and fall back to 3.3.
         selected = user_input.get(CONF_DEVICE_ID) if user_input else None
         default_device = (
             devices_by_id.get(selected) if selected else self._devices[0]
         ) or self._devices[0]
-        default_version = _normalise_version(default_device.get("version"))
+        discovered = self._discovered.get(default_device.get("id", ""), {})
+        default_version = _normalise_version(
+            discovered.get("version") or default_device.get("version")
+        )
         default_host = (
             user_input.get(CONF_HOST) if user_input else None
-        ) or self._discovered.get(default_device.get("id", ""), "")
+        ) or discovered.get("ip", "")
 
         host_field = (
             vol.Required(CONF_HOST, default=default_host)
@@ -251,6 +256,66 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
             },
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Update the fireplace's IP address / protocol version in place."""
+        entry = self._get_reconfigure_entry()
+        device_id = entry.data[CONF_DEVICE_ID]
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            host = user_input[CONF_HOST].strip()
+            version = user_input[CONF_PROTOCOL_VERSION]
+            try:
+                await self.hass.async_add_executor_job(
+                    test_local_connection,
+                    device_id,
+                    host,
+                    entry.data[CONF_LOCAL_KEY],
+                    version,
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Could not connect locally: %s", err)
+                errors["base"] = "cannot_connect"
+            else:
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={CONF_HOST: host, CONF_PROTOCOL_VERSION: version},
+                )
+
+        if not self._scanned:
+            self._discovered = await self.hass.async_add_executor_job(scan_lan)
+            self._scanned = True
+        discovered = self._discovered.get(device_id, {})
+
+        default_host = (
+            (user_input or {}).get(CONF_HOST)
+            or discovered.get("ip")
+            or entry.data.get(CONF_HOST, "")
+        )
+        default_version = _normalise_version(
+            (user_input or {}).get(CONF_PROTOCOL_VERSION)
+            or discovered.get("version")
+            or entry.data.get(CONF_PROTOCOL_VERSION)
+        )
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_HOST, default=default_host): TextSelector(),
+                vol.Required(
+                    CONF_PROTOCOL_VERSION, default=default_version
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=PROTOCOL_VERSIONS, mode=SelectSelectorMode.DROPDOWN
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="reconfigure", data_schema=schema, errors=errors
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> ScandiaOptionsFlow:
@@ -265,10 +330,14 @@ class ScandiaOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the DP mapping and temperature options."""
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            if user_input[CONF_MIN_TEMP] >= user_input[CONF_MAX_TEMP]:
+                errors["base"] = "temp_range"
+            else:
+                return self.async_create_entry(title="", data=user_input)
 
-        options = self.config_entry.options
+        options = {**self.config_entry.options, **(user_input or {})}
 
         def _dp_default(key: str, fallback: str) -> str:
             return str(options.get(key, fallback))
@@ -337,4 +406,6 @@ class ScandiaOptionsFlow(OptionsFlow):
                 ),
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(
+            step_id="init", data_schema=schema, errors=errors
+        )
