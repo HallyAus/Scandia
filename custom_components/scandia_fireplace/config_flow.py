@@ -72,6 +72,7 @@ from .const import (
     PROTOCOL_VERSIONS,
 )
 from .coordinator import test_local_connection
+from .discovery import scan_lan
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,6 +92,8 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
         """Hold state between the credential and device-selection steps."""
         self._cloud_creds: dict[str, str] = {}
         self._devices: list[dict[str, Any]] = []
+        self._discovered: dict[str, str] = {}
+        self._scanned = False
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -153,11 +156,19 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
 
         devices_by_id = {d["id"]: d for d in self._devices if d.get("id")}
 
+        # Best-effort LAN scan (once) so we can auto-fill the fireplace's IP.
+        if not self._scanned:
+            self._discovered = await self.hass.async_add_executor_job(scan_lan)
+            self._scanned = True
+
         if user_input is not None:
             device_id = user_input[CONF_DEVICE_ID]
             device = devices_by_id.get(device_id, {})
             local_key = device.get("key", "")
-            host = user_input[CONF_HOST].strip()
+            # Fall back to the auto-discovered IP if the field was left blank.
+            host = user_input.get(CONF_HOST, "").strip() or self._discovered.get(
+                device_id, ""
+            )
             version = user_input[CONF_PROTOCOL_VERSION]
 
             await self.async_set_unique_id(device_id)
@@ -165,6 +176,8 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
 
             if not local_key:
                 errors["base"] = "no_local_key"
+            elif not host:
+                errors["base"] = "no_ip"
             else:
                 try:
                     await self.hass.async_add_executor_job(
@@ -194,19 +207,32 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
             if d.get("id")
         ]
 
-        # Pre-fill the protocol version from the first/selected device.
+        # Pre-fill the protocol version and IP from the first/selected device.
         selected = user_input.get(CONF_DEVICE_ID) if user_input else None
-        default_device = devices_by_id.get(selected) if selected else self._devices[0]
+        default_device = (
+            devices_by_id.get(selected) if selected else self._devices[0]
+        ) or self._devices[0]
         default_version = _normalise_version(default_device.get("version"))
+        default_host = (
+            user_input.get(CONF_HOST) if user_input else None
+        ) or self._discovered.get(default_device.get("id", ""), "")
+
+        host_field = (
+            vol.Required(CONF_HOST, default=default_host)
+            if default_host
+            else vol.Optional(CONF_HOST, default="")
+        )
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_DEVICE_ID): SelectSelector(
+                vol.Required(
+                    CONF_DEVICE_ID, default=default_device.get("id")
+                ): SelectSelector(
                     SelectSelectorConfig(
                         options=options, mode=SelectSelectorMode.DROPDOWN
                     )
                 ),
-                vol.Required(CONF_HOST): TextSelector(),
+                host_field: TextSelector(),
                 vol.Required(
                     CONF_PROTOCOL_VERSION, default=default_version
                 ): SelectSelector(
@@ -217,7 +243,12 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
             }
         )
         return self.async_show_form(
-            step_id="select_device", data_schema=schema, errors=errors
+            step_id="select_device",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "discovered": str(len(self._discovered)),
+            },
         )
 
     @staticmethod

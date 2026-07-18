@@ -90,12 +90,21 @@ The integration then lists every device on the account.
 **Step 2 — Select your fireplace**
 - **Fireplace** — pick it from the dropdown. Its local key and protocol version
   are filled in automatically.
-- **IP address** — the cloud can't report this, so enter the fireplace's LAN IP
-  (find it in your router's device list, and reserve it so it won't change).
+- **IP address** — **auto-detected**. On opening this step the integration
+  listens for the Tuya UDP broadcasts your fireplace sends on the LAN and
+  matches them to its device ID, pre-filling the IP. If your network blocks
+  those broadcasts (some VLAN/Docker setups do), the field is left blank —
+  enter the IP from your router's device list. Either way, reserve the IP so it
+  won't change.
 - **Tuya protocol version** — pre-filled from the cloud; most Scandia units are
   **3.3**. If the local test fails, try 3.4 or 3.5.
 
 The integration verifies it can reach the fireplace locally before finishing.
+
+> 💡 Auto-detection needs Home Assistant to be on the **same subnet** as the
+> fireplace and able to receive UDP broadcasts (ports 6666/6667/7000). Host-mode
+> and standard add-on installs get this automatically; heavily segmented
+> networks may need the IP entered by hand.
 
 ## Data points (advanced)
 

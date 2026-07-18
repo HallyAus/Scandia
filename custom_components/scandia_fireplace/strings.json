@@ -13,10 +13,10 @@
       },
       "select_device": {
         "title": "Select your fireplace",
-        "description": "Choose the fireplace from your account and enter its IP address (the cloud doesn't report it — find it in your router's device list, and reserve it so it doesn't change). The local key is fetched automatically.",
+        "description": "Found {discovered} Tuya device(s) on your network. Choose the fireplace — its local key is fetched from the cloud and its IP is auto-detected from the LAN where possible. If the IP field is blank, enter it manually (from your router's device list); reserve it so it doesn't change.",
         "data": {
           "device_id": "Fireplace",
-          "host": "IP address",
+          "host": "IP address (auto-detected)",
           "protocol_version": "Tuya protocol version"
         }
       }
@@ -25,6 +25,7 @@
       "cloud_error": "Could not reach the Tuya cloud. Check the region, Access ID and Access Secret, and that your IoT project has the Smart Home data source and a linked app account.",
       "no_devices": "No devices were found on this Tuya account. Make sure your app account is linked to the IoT project.",
       "no_local_key": "The Tuya cloud did not return a local key for this device. Try again in a few minutes, or check the IoT project linkage.",
+      "no_ip": "The fireplace's IP address couldn't be auto-detected. Enter it manually — find it in your router's device list.",
       "cannot_connect": "Could not reach the fireplace locally. Check the IP address and protocol version, ensure Home Assistant is on the same network, and fully close the Tuya app while testing."
     },
     "abort": {
