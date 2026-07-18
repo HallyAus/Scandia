@@ -9,5 +9,5 @@
   "issue_tracker": "https://github.com/HallyAus/Scandia/issues",
   "loggers": ["tinytuya", "tuya_sharing"],
   "requirements": ["tuya-device-sharing-sdk==0.2.10", "tinytuya==1.15.1"],
-  "version": "3.0.1"
+  "version": "3.0.2"
 }

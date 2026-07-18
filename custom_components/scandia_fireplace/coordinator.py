@@ -40,6 +40,7 @@ from .const import (
     OPTION_KEY,
     TUYA_CLIENT_ID,
 )
+from .discovery import scan_lan
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -262,7 +263,7 @@ class ScandiaLocalCoordinator(ScandiaBaseCoordinator):
         super().__init__(hass, entry, LOCAL_INTERVAL)
         self._device = self._new_device()
         self._device.set_socketPersistent(True)
-        self._refresh_attempted = False
+        self._recover_attempted = False
 
     def _new_device(self) -> tinytuya.Device:
         device = _make_local_device(
@@ -284,10 +285,12 @@ class ScandiaLocalCoordinator(ScandiaBaseCoordinator):
         try:
             data = await self.hass.async_add_executor_job(self._status)
         except Exception as first_err:  # noqa: BLE001
-            # A stale local key (after re-pairing) looks like a dropped
-            # connection. Pull a fresh key from the cloud once, then retry.
-            if not self._refresh_attempted and await self._async_refresh_local_key():
-                self._refresh_attempted = True
+            # A dropped connection usually means the fireplace moved to a new
+            # DHCP IP, or its local key changed after re-pairing. Re-discover
+            # the IP on the LAN and refresh the key from the cloud once, then
+            # retry before giving up.
+            if not self._recover_attempted and await self._async_recover():
+                self._recover_attempted = True
                 try:
                     data = await self.hass.async_add_executor_job(self._status)
                 except Exception as retry_err:  # noqa: BLE001
@@ -298,8 +301,40 @@ class ScandiaLocalCoordinator(ScandiaBaseCoordinator):
                 raise UpdateFailed(
                     f"Error communicating with fireplace: {first_err}"
                 ) from first_err
-        self._refresh_attempted = False
+        self._recover_attempted = False
         return data
+
+    async def _async_recover(self) -> bool:
+        """Try to restore a lost local connection.
+
+        Re-discovers the device's current IP on the LAN and refreshes its local
+        key from the cloud. Rebuilds the socket if either changed. Returns True
+        when something changed and a retry is worthwhile.
+        """
+        host_changed = await self._async_rediscover_host()
+        key_changed = await self._async_refresh_local_key()
+        if not (host_changed or key_changed):
+            return False
+        await self.hass.async_add_executor_job(self._device.close)
+        self._device = self._new_device()
+        self._device.set_socketPersistent(True)
+        return True
+
+    async def _async_rediscover_host(self) -> bool:
+        """Scan the LAN for the device's current IP. Returns True if it moved."""
+        found = await self.hass.async_add_executor_job(scan_lan)
+        info = found.get(self.device_id)
+        new_host = info.get("ip") if info else None
+        if not new_host or new_host == self.entry.data.get(CONF_HOST):
+            return False
+
+        _LOGGER.info(
+            "Rediscovered fireplace %s at new IP %s", self.device_id, new_host
+        )
+        self.hass.config_entries.async_update_entry(
+            self.entry, data={**self.entry.data, CONF_HOST: new_host}
+        )
+        return True
 
     async def _async_refresh_local_key(self) -> bool:
         """Re-fetch the local key from the Tuya cloud. Returns True if changed."""
@@ -321,9 +356,6 @@ class ScandiaLocalCoordinator(ScandiaBaseCoordinator):
         self.hass.config_entries.async_update_entry(
             self.entry, data={**self.entry.data, CONF_LOCAL_KEY: new_key}
         )
-        await self.hass.async_add_executor_job(self._device.close)
-        self._device = self._new_device()
-        self._device.set_socketPersistent(True)
         return True
 
     async def _send(self, addr_values: dict[str, Any]) -> None:
