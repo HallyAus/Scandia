@@ -20,7 +20,6 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
-    CLOUD_BRIGHTNESS_MAX,
     CLOUD_DEFAULTS,
     CONF_DEVICE_ID,
     CONF_ENDPOINT,
@@ -34,7 +33,6 @@ from .const import (
     DEFAULT_PROTOCOL_VERSION,
     DOMAIN,
     FUNCTIONS,
-    LOCAL_BRIGHTNESS_MAX,
     LOCAL_DEFAULTS,
     MODE_CLOUD,
     OPTION_KEY,
@@ -64,8 +62,6 @@ def build_address_map(entry: ConfigEntry) -> dict[str, str]:
 
 class ScandiaBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Common semantic read/write layer shared by both connection modes."""
-
-    brightness_max: int = LOCAL_BRIGHTNESS_MAX
 
     def __init__(
         self, hass: HomeAssistant, entry: ConfigEntry, interval: timedelta
@@ -155,8 +151,6 @@ def build_manager(entry: ConfigEntry, token_listener: SharingTokenListener) -> M
 
 class ScandiaCloudCoordinator(ScandiaBaseCoordinator):
     """Control the fireplace through the Tuya cloud."""
-
-    brightness_max = CLOUD_BRIGHTNESS_MAX
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, manager: Manager) -> None:
         """Set up around an existing Manager."""
@@ -255,8 +249,6 @@ def test_local_connection(
 
 class ScandiaLocalCoordinator(ScandiaBaseCoordinator):
     """Control the fireplace directly over the LAN via tinytuya."""
-
-    brightness_max = LOCAL_BRIGHTNESS_MAX
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Open a persistent local connection."""

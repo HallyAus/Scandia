@@ -21,7 +21,7 @@
       },
       "mode": {
         "title": "Choose how to control the fireplace",
-        "description": "Both use the sign-in you just completed.\n\n**Cloud** — commands go via Tuya's cloud; works from anywhere, no local network setup.\n\n**Local** — commands go directly over your LAN using the key just retrieved; faster and keeps working without internet.",
+        "description": "Both use the sign-in you just completed.\n\n**Cloud** — commands go via Tuya's cloud; works from anywhere, no local network setup. Only power and the timer are available in cloud mode.\n\n**Local** — commands go directly over your LAN using the key just retrieved; faster, works without internet, and unlocks the flame, heater and light controls.",
         "menu_options": {
           "cloud": "Cloud (via Tuya)",
           "local": "Local (direct over your network)"
@@ -48,49 +48,20 @@
     }
   },
   "options": {
-    "error": {
-      "temp_range": "The minimum temperature must be lower than the maximum temperature."
-    },
     "step": {
       "init": {
         "title": "Scandia fireplace mapping",
-        "description": "Map each fireplace function to its Tuya address — a **function code** (cloud mode, e.g. `switch`) or a **data point number** (local mode, e.g. `1`). Leave an optional field blank to disable that feature. Download the integration's diagnostics to see the addresses your device reports.",
+        "description": "Map each control to its Tuya address — a **function code** (cloud mode, e.g. `switch`) or a **data point number** (local mode, e.g. `1`). The defaults match the Scandia Aurora. Leave an optional field blank to disable that control. Download the integration's diagnostics to see the addresses your device reports.",
         "data": {
-          "addr_power": "Power / flame on-off",
-          "addr_heat": "Heating element",
-          "addr_target_temp": "Target temperature",
-          "addr_current_temp": "Current temperature",
-          "addr_flame_brightness": "Flame brightness",
-          "addr_flame_effect": "Flame effect / colour",
-          "addr_flame_speed": "Flame speed",
+          "addr_power": "Power (on/off)",
+          "addr_heat": "Heater (Off/Lo/Hi)",
+          "addr_top_light": "Top light colour",
           "addr_timer": "Countdown timer",
-          "addr_child_lock": "Child lock",
-          "addr_preset": "Heat preset (eco/comfort/boost)",
-          "addr_power_w": "Power sensor (watts)",
-          "addr_energy": "Energy sensor (kWh)",
-          "min_temp": "Minimum target temperature (°C)",
-          "max_temp": "Maximum target temperature (°C)"
+          "addr_flame_effect": "Flame colour",
+          "addr_flame_log": "Flame log colour"
         }
       }
     }
   },
-  "entity": {
-    "light": {
-      "flame": { "name": "Flame" }
-    },
-    "select": {
-      "flame_speed": { "name": "Flame speed" }
-    },
-    "number": {
-      "timer": { "name": "Auto-off timer" }
-    },
-    "switch": {
-      "child_lock": { "name": "Child lock" }
-    },
-    "sensor": {
-      "current_temperature": { "name": "Current temperature" },
-      "power": { "name": "Power" },
-      "energy": { "name": "Energy" }
-    }
-  }
+  "entity": {}
 }

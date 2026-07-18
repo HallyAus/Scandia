@@ -1,62 +1,63 @@
-"""Sensor platform for the Scandia Fireplace (temperature, power, energy)."""
+"""Sensor platform for the Scandia Fireplace.
+
+Two kinds of sensors:
+
+* State sensors that show the current flame / flame-log / top-light colour, so
+  the per-preset buttons have live feedback.
+* Auto-discovered diagnostic sensors: one (disabled by default) for every raw
+  endpoint the device reports that isn't already backed by another entity.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorEntityDescription,
-    SensorStateClass,
-)
-from homeassistant.const import (
-    EntityCategory,
-    UnitOfEnergy,
-    UnitOfPower,
-    UnitOfTemperature,
-)
+from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import ScandiaConfigEntry
-from .const import ENERGY_SCALE, FN_CURRENT_TEMP, FN_ENERGY, FN_POWER_W
+from .const import (
+    FLAME_EFFECT_OPTIONS,
+    FLAME_LOG_OPTIONS,
+    FN_FLAME_EFFECT,
+    FN_FLAME_LOG,
+    FN_TOP_LIGHT,
+    TOP_LIGHT_OPTIONS,
+)
 from .entity import ScandiaEntity
 
 
 @dataclass(frozen=True, kw_only=True)
-class ScandiaSensorDescription(SensorEntityDescription):
-    """Describes a Scandia sensor and how to derive its value."""
+class ScandiaStateSensorDescription(SensorEntityDescription):
+    """Describes a sensor that shows the current label of an enum function."""
 
     function: str
-    scale: float = 1.0
+    value_labels: dict[str, str]
 
 
-SENSORS: tuple[ScandiaSensorDescription, ...] = (
-    ScandiaSensorDescription(
-        key="current_temperature",
-        function=FN_CURRENT_TEMP,
-        translation_key="current_temperature",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+STATE_SENSORS: tuple[ScandiaStateSensorDescription, ...] = (
+    ScandiaStateSensorDescription(
+        key="flame_colour",
+        function=FN_FLAME_EFFECT,
+        value_labels=FLAME_EFFECT_OPTIONS,
+        name="Flame colour",
+        icon="mdi:fire",
     ),
-    ScandiaSensorDescription(
-        key="power",
-        function=FN_POWER_W,
-        translation_key="power",
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfPower.WATT,
+    ScandiaStateSensorDescription(
+        key="flame_log_colour",
+        function=FN_FLAME_LOG,
+        value_labels=FLAME_LOG_OPTIONS,
+        name="Flame log colour",
+        icon="mdi:fireplace",
     ),
-    ScandiaSensorDescription(
-        key="energy",
-        function=FN_ENERGY,
-        scale=ENERGY_SCALE,
-        translation_key="energy",
-        device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+    ScandiaStateSensorDescription(
+        key="top_light_colour",
+        function=FN_TOP_LIGHT,
+        value_labels=TOP_LIGHT_OPTIONS,
+        name="Top light colour",
+        icon="mdi:lightbulb-on",
     ),
 )
 
@@ -66,11 +67,11 @@ async def async_setup_entry(
     entry: ScandiaConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up known sensors plus a diagnostic sensor for every raw endpoint."""
+    """Set up state sensors plus a diagnostic sensor for every raw endpoint."""
     coordinator = entry.runtime_data
     async_add_entities(
-        ScandiaSensor(coordinator, description)
-        for description in SENSORS
+        ScandiaStateSensor(coordinator, description)
+        for description in STATE_SENSORS
         if coordinator.configured(description.function)
     )
 
@@ -97,27 +98,26 @@ async def async_setup_entry(
     entry.async_on_unload(coordinator.async_add_listener(_discover_raw_endpoints))
 
 
-class ScandiaSensor(ScandiaEntity, SensorEntity):
-    """A numeric reading derived from a single function."""
+class ScandiaStateSensor(ScandiaEntity, SensorEntity):
+    """Shows the current friendly label for an enum function."""
 
-    entity_description: ScandiaSensorDescription
+    entity_description: ScandiaStateSensorDescription
 
-    def __init__(self, coordinator, description: ScandiaSensorDescription) -> None:
+    def __init__(
+        self, coordinator, description: ScandiaStateSensorDescription
+    ) -> None:
         """Store the description."""
         super().__init__(coordinator)
         self.entity_description = description
         self._attr_unique_id = f"{coordinator.device_id}_{description.key}"
 
     @property
-    def native_value(self) -> float | None:
-        """Return the scaled sensor value."""
+    def native_value(self) -> str | None:
+        """Return the label for the current raw value."""
         value = self.coordinator.read(self.entity_description.function)
         if value is None:
             return None
-        try:
-            return round(float(value) * self.entity_description.scale, 2)
-        except (TypeError, ValueError):
-            return None
+        return self.entity_description.value_labels.get(str(value), str(value))
 
     @callback
     def _handle_coordinator_update(self) -> None:

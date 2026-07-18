@@ -22,9 +22,6 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 from homeassistant.helpers.selector import (
-    NumberSelector,
-    NumberSelectorConfig,
-    NumberSelectorMode,
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
@@ -38,16 +35,12 @@ from .const import (
     CONF_ENDPOINT,
     CONF_HOST,
     CONF_LOCAL_KEY,
-    CONF_MAX_TEMP,
-    CONF_MIN_TEMP,
     CONF_MODE,
     CONF_MODEL,
     CONF_PROTOCOL_VERSION,
     CONF_TERMINAL_ID,
     CONF_TOKEN_INFO,
     CONF_USER_CODE,
-    DEFAULT_MAX_TEMP,
-    DEFAULT_MIN_TEMP,
     DEFAULT_PROTOCOL_VERSION,
     DOMAIN,
     FN_POWER,
@@ -353,20 +346,16 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class ScandiaOptionsFlow(OptionsFlow):
-    """Let the user remap addresses (codes or DPs) and tune temperature limits."""
+    """Let the user remap each function to a Tuya code (cloud) or DP (local)."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Manage the address mapping and temperature options."""
-        errors: dict[str, str] = {}
+        """Manage the address mapping."""
         if user_input is not None:
-            if user_input[CONF_MIN_TEMP] >= user_input[CONF_MAX_TEMP]:
-                errors["base"] = "temp_range"
-            else:
-                return self.async_create_entry(title="", data=user_input)
+            return self.async_create_entry(title="", data=user_input)
 
-        options = {**self.config_entry.options, **(user_input or {})}
+        options = self.config_entry.options
         defaults = (
             CLOUD_DEFAULTS
             if self.config_entry.data.get(CONF_MODE) == MODE_CLOUD
@@ -380,21 +369,6 @@ class ScandiaOptionsFlow(OptionsFlow):
             marker = vol.Required if fn == FN_POWER else vol.Optional
             schema_dict[marker(option_key, default=current)] = TextSelector()
 
-        schema_dict[
-            vol.Required(
-                CONF_MIN_TEMP, default=options.get(CONF_MIN_TEMP, DEFAULT_MIN_TEMP)
-            )
-        ] = NumberSelector(
-            NumberSelectorConfig(min=5, max=40, step=1, mode=NumberSelectorMode.BOX)
-        )
-        schema_dict[
-            vol.Required(
-                CONF_MAX_TEMP, default=options.get(CONF_MAX_TEMP, DEFAULT_MAX_TEMP)
-            )
-        ] = NumberSelector(
-            NumberSelectorConfig(min=5, max=40, step=1, mode=NumberSelectorMode.BOX)
-        )
-
         return self.async_show_form(
-            step_id="init", data_schema=vol.Schema(schema_dict), errors=errors
+            step_id="init", data_schema=vol.Schema(schema_dict)
         )
