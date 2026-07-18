@@ -15,28 +15,22 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import ScandiaConfigEntry
-from .const import (
-    CONF_CODE_CURRENT_TEMP,
-    CONF_CODE_ENERGY,
-    CONF_CODE_POWER_W,
-    ENERGY_CODE_SCALE,
-)
+from .const import ENERGY_SCALE, FN_CURRENT_TEMP, FN_ENERGY, FN_POWER_W
 from .entity import ScandiaEntity
-from .helpers import get_code
 
 
 @dataclass(frozen=True, kw_only=True)
 class ScandiaSensorDescription(SensorEntityDescription):
     """Describes a Scandia sensor and how to derive its value."""
 
-    code_option: str
+    function: str
     scale: float = 1.0
 
 
 SENSORS: tuple[ScandiaSensorDescription, ...] = (
     ScandiaSensorDescription(
         key="current_temperature",
-        code_option=CONF_CODE_CURRENT_TEMP,
+        function=FN_CURRENT_TEMP,
         translation_key="current_temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -44,7 +38,7 @@ SENSORS: tuple[ScandiaSensorDescription, ...] = (
     ),
     ScandiaSensorDescription(
         key="power",
-        code_option=CONF_CODE_POWER_W,
+        function=FN_POWER_W,
         translation_key="power",
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
@@ -52,8 +46,8 @@ SENSORS: tuple[ScandiaSensorDescription, ...] = (
     ),
     ScandiaSensorDescription(
         key="energy",
-        code_option=CONF_CODE_ENERGY,
-        scale=ENERGY_CODE_SCALE,
+        function=FN_ENERGY,
+        scale=ENERGY_SCALE,
         translation_key="energy",
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -67,33 +61,30 @@ async def async_setup_entry(
     entry: ScandiaConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the sensors whose function code is configured."""
+    """Set up the sensors whose function is configured."""
     coordinator = entry.runtime_data
     async_add_entities(
-        ScandiaSensor(coordinator, entry, description)
+        ScandiaSensor(coordinator, description)
         for description in SENSORS
-        if get_code(entry, description.code_option)
+        if coordinator.configured(description.function)
     )
 
 
 class ScandiaSensor(ScandiaEntity, SensorEntity):
-    """A numeric reading derived from a single function code."""
+    """A numeric reading derived from a single function."""
 
     entity_description: ScandiaSensorDescription
 
-    def __init__(
-        self, coordinator, entry: ScandiaConfigEntry, description: ScandiaSensorDescription
-    ) -> None:
-        """Store the description and resolve its function code."""
+    def __init__(self, coordinator, description: ScandiaSensorDescription) -> None:
+        """Store the description."""
         super().__init__(coordinator)
         self.entity_description = description
-        self._code = get_code(entry, description.code_option)
         self._attr_unique_id = f"{coordinator.device_id}_{description.key}"
 
     @property
     def native_value(self) -> float | None:
         """Return the scaled sensor value."""
-        value = self._code_value(self._code)
+        value = self.coordinator.read(self.entity_description.function)
         if value is None:
             return None
         try:

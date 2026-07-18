@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Sign in to Tuya / Smart Life",
-        "description": "Enter the **user code** from your Smart Life (or Tuya Smart) app. Find it in the app under **Me → ⚙ (Settings) → Account and Security → User Code**. No developer account is needed.",
+        "description": "Enter the **user code** from your Smart Life (or Tuya Smart) app. Find it under **Me → ⚙ (Settings) → Account and Security → User Code**. No developer account is needed.",
         "data": {
           "user_code": "User code"
         }
@@ -18,15 +18,32 @@
         "data": {
           "device_id": "Fireplace"
         }
+      },
+      "mode": {
+        "title": "Choose how to control the fireplace",
+        "description": "Both use the sign-in you just completed.\n\n**Cloud** — commands go via Tuya's cloud; works from anywhere, no local network setup.\n\n**Local** — commands go directly over your LAN using the key just retrieved; faster and keeps working without internet.",
+        "menu_options": {
+          "cloud": "Cloud (via Tuya)",
+          "local": "Local (direct over your network)"
+        }
+      },
+      "local": {
+        "title": "Confirm local connection",
+        "description": "The local key was retrieved automatically. Confirm the fireplace's IP address (auto-detected where possible — otherwise enter it from your router and reserve it) and protocol version.",
+        "data": {
+          "host": "IP address",
+          "protocol_version": "Tuya protocol version"
+        }
       }
     },
     "error": {
       "login_error": "Login failed. Check the user code, make sure you scanned the QR code with the Smart Life app, and try again.",
-      "temp_range": "The minimum temperature must be lower than the maximum temperature."
+      "cannot_connect": "Could not reach the fireplace locally. Check the IP address and protocol version, ensure Home Assistant is on the same network, and fully close the Tuya app while testing."
     },
     "abort": {
       "already_configured": "This fireplace is already configured.",
       "no_devices": "No devices were found on this account. Add the fireplace to the Smart Life app first.",
+      "no_local_key": "The cloud didn't provide a local key for this device, so local mode isn't available. Remove and re-add it using Cloud mode.",
       "reauth_successful": "Successfully re-authenticated."
     }
   },
@@ -36,21 +53,21 @@
     },
     "step": {
       "init": {
-        "title": "Scandia fireplace function codes",
-        "description": "Map the Tuya function codes to fireplace functions. Leave an optional field blank to disable that feature. Download the integration's diagnostics to see the codes your device actually reports.",
+        "title": "Scandia fireplace mapping",
+        "description": "Map each fireplace function to its Tuya address — a **function code** (cloud mode, e.g. `switch`) or a **data point number** (local mode, e.g. `1`). Leave an optional field blank to disable that feature. Download the integration's diagnostics to see the addresses your device reports.",
         "data": {
-          "code_power": "Power / flame on-off code",
-          "code_heat": "Heating element code",
-          "code_target_temp": "Target temperature code",
-          "code_current_temp": "Current temperature code",
-          "code_flame_brightness": "Flame brightness code",
-          "code_flame_effect": "Flame effect / colour code",
-          "code_flame_speed": "Flame speed code",
-          "code_timer": "Countdown timer code",
-          "code_child_lock": "Child lock code",
-          "code_preset": "Heat preset code (eco/comfort/boost)",
-          "code_power_w": "Power sensor code (watts)",
-          "code_energy": "Energy sensor code (kWh)",
+          "addr_power": "Power / flame on-off",
+          "addr_heat": "Heating element",
+          "addr_target_temp": "Target temperature",
+          "addr_current_temp": "Current temperature",
+          "addr_flame_brightness": "Flame brightness",
+          "addr_flame_effect": "Flame effect / colour",
+          "addr_flame_speed": "Flame speed",
+          "addr_timer": "Countdown timer",
+          "addr_child_lock": "Child lock",
+          "addr_preset": "Heat preset (eco/comfort/boost)",
+          "addr_power_w": "Power sensor (watts)",
+          "addr_energy": "Energy sensor (kWh)",
           "min_temp": "Minimum target temperature (°C)",
           "max_temp": "Maximum target temperature (°C)"
         }

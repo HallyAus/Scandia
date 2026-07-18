@@ -4,24 +4,24 @@ A [HACS](https://hacs.xyz/) custom integration for **Scandia Aurora electric
 fireplaces** (36" / 50" / **74"**). The Scandia Aurora fires are Tuya-based
 devices normally controlled from the **Scandia Aurora Wi-Fi** app (a re-branded
 Tuya / Smart Life app). This integration brings them into Home Assistant with a
-**simple sign-in** — no Tuya developer account, no keys to copy.
+**simple sign-in** — no Tuya developer account, no keys to copy — and lets you
+choose **cloud** or **local** control.
 
-You sign in the same way Home Assistant's official Tuya integration does: enter
-a short **user code** from the Smart Life app and scan a **QR code**. The
-integration then talks to your fireplace through the Tuya cloud, but maps it to
-proper, fireplace-specific Home Assistant entities (flame light, flame speed,
-presets, timer, child lock) instead of the generic controls the official
-integration produces.
+You sign in exactly like Home Assistant's official Tuya integration: enter a
+short **user code** from the Smart Life app and scan a **QR code**. That single
+sign-in retrieves both the cloud token *and* the device's local key + IP, so you
+can pick how it's controlled:
 
-> ℹ️ **Cloud vs. local:** the QR sign-in only grants cloud access, so this
-> integration controls the fireplace **through Tuya's cloud** (like the official
-> Tuya integration). Local-only control is possible but requires a Tuya IoT
-> developer project to obtain the device's local key — see
-> [Local control](#local-control-alternative).
+- **☁️ Cloud** — commands go through Tuya's cloud. Works from anywhere, no local
+  network setup.
+- **🏠 Local** — commands go **directly over your LAN** (via `tinytuya`) using
+  the key retrieved during sign-in. Faster, and keeps working with no internet.
+
+Either way you get proper, fireplace-specific entities (flame light, flame
+speed, presets, timer, child lock) rather than the generic controls the official
+Tuya integration produces.
 
 ## Features
-
-Depending on what your fireplace firmware exposes, you get:
 
 | Entity | Platform | What it controls |
 | --- | --- | --- |
@@ -33,11 +33,8 @@ Depending on what your fireplace firmware exposes, you get:
 | Current temperature | `sensor` | Room temperature |
 | Power / Energy | `sensor` | Live power (W) and cumulative energy (kWh), if reported |
 
-Entities are created only when the matching Tuya function code is present, so
-you won't see controls your unit doesn't support. Flame-specific controls,
-presets and the power/energy sensors are **opt-in** — their codes vary between
-models, so enable them under **Configure** once you've identified them from the
-diagnostics (see [Function codes](#function-codes-advanced)).
+Entities are created only when the matching function is mapped and present, so
+you won't see controls your unit doesn't support.
 
 ## Installation (HACS)
 
@@ -58,74 +55,80 @@ Copy `custom_components/scandia_fireplace` into your Home Assistant
 Make sure the fireplace is already added to the **Scandia Aurora / Smart Life /
 Tuya** app and working there. Then:
 
-**Step 1 — User code**
-In the Smart Life app, go to **Me → ⚙ (Settings) → Account and Security →
-User Code** and note the code. Enter it in Home Assistant.
+1. **User code** — in the Smart Life app: **Me → ⚙ Settings → Account and
+   Security → User Code**. Enter it in Home Assistant.
+2. **Scan the QR code** — in the app tap **＋ (top right) → Scan**, scan the code
+   Home Assistant shows, then press **Submit**.
+3. **Select your fireplace** from the account's device list.
+4. **Choose Cloud or Local:**
+   - **Cloud** finishes immediately.
+   - **Local** confirms the fireplace's IP (auto-detected from the LAN where
+     possible — otherwise enter it from your router and reserve it) and protocol
+     version, then verifies it can reach the device.
 
-**Step 2 — Scan the QR code**
-A QR code appears. In the Smart Life app tap **＋ (top right) → Scan**, scan it,
-then press **Submit** in Home Assistant to complete the login.
-
-**Step 3 — Select your fireplace**
-Pick the fireplace from the list of devices on your account. Done.
-
-> You need a second screen to show the QR code (Home Assistant on a computer)
+> You need a second screen to display the QR code (Home Assistant on a computer)
 > while you scan it with the phone running the Smart Life app.
 
-## Function codes (advanced)
+### Which mode should I pick?
 
-Tuya cloud devices expose their functions as named **codes** (e.g. `switch`,
-`temp_set`). This integration ships with sensible defaults for a standard
-electric-fireplace heater, but the flame-related codes vary between models and
-are left disabled until you set them.
+- **Local** is best if Home Assistant is on the same network as the fireplace:
+  it's faster and doesn't depend on the internet. If the local key ever changes
+  (e.g. after re-pairing), the integration re-fetches it from the cloud
+  automatically.
+- **Cloud** is the safe default if the fireplace is on a different network/VLAN,
+  or local control won't connect.
 
-If some controls are missing or behave oddly:
+Local mode is only offered if the sign-in returned a local key for your device.
 
-1. Go to **Settings → Devices & services → Scandia Fireplace →
-   ⋮ → Download diagnostics**. The `status_codes` section lists every function
-   code the device currently reports, with its live value.
-2. Toggle a function from the fireplace/app and re-download to see which code
+## Function mapping (advanced)
+
+Tuya devices address functions differently in each mode: **function codes**
+(cloud, e.g. `switch`, `temp_set`) or **numbered data points** (local, e.g. `1`,
+`2`). The integration ships with sensible defaults, but some — heating element,
+flame effect/speed, presets, power/energy — vary between models and may need
+setting.
+
+If a control is missing or wrong:
+
+1. **Settings → Devices & services → Scandia Fireplace → ⋮ → Download
+   diagnostics**. The `raw_status` section lists every address the device
+   reports, with its live value, and `address_map` shows the current mapping.
+2. Toggle a function on the fireplace/app and re-download to see which address
    changes.
-3. Enter the correct codes under **Configure**. Leave a field blank to disable
-   that feature.
+3. Enter the correct addresses under **Configure**. Leave a field blank to
+   disable that feature.
 
-### Default code mapping
+### Default mapping
 
-| Function | Default code |
-| --- | --- |
-| Power / flame on-off | `switch` |
-| Target temperature | `temp_set` |
-| Current temperature | `temp_current` |
-| Flame brightness | `bright_value` |
-| Countdown timer | `countdown_set` |
-| Child lock | `child_lock` |
-| Heat preset | `mode` |
-| Heating element | _unset_ |
-| Flame effect / colour | _unset_ |
-| Flame speed | _unset_ |
-| Power sensor, W | _unset_ |
-| Energy sensor, kWh | _unset_ |
+| Function | Cloud code | Local DP |
+| --- | --- | --- |
+| Power / flame on-off | `switch` | `1` |
+| Target temperature | `temp_set` | `2` |
+| Current temperature | `temp_current` | `3` |
+| Flame brightness | `bright_value` | `102` |
+| Flame effect / colour | _unset_ | `101` |
+| Flame speed | _unset_ | `103` |
+| Countdown timer | `countdown_set` | `106` |
+| Child lock | `child_lock` | `108` |
+| Heat preset | `mode` | _unset_ |
+| Heating element | _unset_ | `107` |
+| Power / Energy sensors | _unset_ | _unset_ |
 
 ## Troubleshooting
 
-- **`login_error`** — double-check the user code (it changes if you log out of
-  the app), and make sure you scanned the QR with the **Smart Life / Tuya**
-  app, not a generic camera, before pressing Submit. The QR code expires after
-  a few minutes; if it does, cancel and start again.
-- **No devices found** — confirm the fireplace shows up in the Smart Life app
-  under the same account whose user code you used.
-- **Entity says re-authentication needed** — the cloud session expired. Follow
-  the re-auth prompt to scan a fresh QR code; your settings are kept.
-- **Values look wrong / controls missing** — re-map the function codes from
+- **`login_error`** — re-check the user code (it changes if you log out of the
+  app) and make sure you scanned the QR with the **Smart Life / Tuya** app
+  before pressing Submit. The QR expires after a few minutes; if it does, start
+  again.
+- **Local mode not offered** — the cloud didn't return a local key for this
+  device; use Cloud mode.
+- **`cannot_connect` (local)** — verify the IP, confirm Home Assistant is on the
+  same subnet, try a different protocol version, and fully close the Tuya app
+  while testing (only one local session is allowed at a time).
+- **Re-authentication needed** — the cloud session expired; follow the prompt to
+  scan a fresh QR code. Your mode and settings are kept.
+- **Values look wrong / controls missing** — re-map the addresses from
   diagnostics as described above.
-
-## Local control (alternative)
-
-If you specifically want **local** (no-cloud) control, that path exists but
-needs the device's *local key*, which requires a one-time free **Tuya IoT
-developer project**. Tools like the `tinytuya` wizard or `make-all/tuya-local`
-can retrieve it. This integration uses the simpler cloud sign-in by design; open
-an issue if you'd like a local-control option added.
 
 ## Disclaimer
 

@@ -1,4 +1,4 @@
-"""Tuya cloud (sharing) communication and update coordinator."""
+"""Coordinators for the Scandia Fireplace: shared base + cloud and local."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import logging
 from datetime import timedelta
 from typing import Any
 
+import tinytuya
 from tuya_sharing import (
     CustomerDevice,
     Manager,
@@ -19,22 +20,109 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
+    CLOUD_BRIGHTNESS_MAX,
+    CLOUD_DEFAULTS,
     CONF_DEVICE_ID,
     CONF_ENDPOINT,
+    CONF_HOST,
+    CONF_LOCAL_KEY,
+    CONF_MODE,
+    CONF_PROTOCOL_VERSION,
     CONF_TERMINAL_ID,
     CONF_TOKEN_INFO,
     CONF_USER_CODE,
+    DEFAULT_PROTOCOL_VERSION,
     DOMAIN,
+    FUNCTIONS,
+    LOCAL_BRIGHTNESS_MAX,
+    LOCAL_DEFAULTS,
+    MODE_CLOUD,
+    OPTION_KEY,
     TUYA_CLIENT_ID,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-# The cloud pushes changes over MQTT, so we only poll occasionally as a safety
-# net in case a push is missed.
-UPDATE_INTERVAL = timedelta(seconds=60)
+CLOUD_INTERVAL = timedelta(seconds=60)
+LOCAL_INTERVAL = timedelta(seconds=30)
 
 
+def build_address_map(entry: ConfigEntry) -> dict[str, str]:
+    """Resolve semantic function -> address (code or DP) from the options."""
+    defaults = (
+        CLOUD_DEFAULTS if entry.data.get(CONF_MODE) == MODE_CLOUD else LOCAL_DEFAULTS
+    )
+    addr: dict[str, str] = {}
+    for fn in FUNCTIONS:
+        raw = entry.options.get(OPTION_KEY[fn], defaults[fn])
+        text = str(raw).strip() if raw is not None else ""
+        if text:
+            addr[fn] = text
+    return addr
+
+
+class ScandiaBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Common semantic read/write layer shared by both connection modes."""
+
+    brightness_max: int = LOCAL_BRIGHTNESS_MAX
+
+    def __init__(
+        self, hass: HomeAssistant, entry: ConfigEntry, interval: timedelta
+    ) -> None:
+        """Set up the shared address map."""
+        self.entry = entry
+        self.device_id = entry.data[CONF_DEVICE_ID]
+        self.addr = build_address_map(entry)
+        super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=interval)
+
+    # -- semantic access ----------------------------------------------------
+    def configured(self, fn: str) -> bool:
+        """Return True if this function is mapped to an address."""
+        return fn in self.addr
+
+    def read(self, fn: str) -> Any:
+        """Return the current value of a function, or None."""
+        if self.data is None or fn not in self.addr:
+            return None
+        return self.data.get(self.addr[fn])
+
+    def present(self, fn: str) -> bool:
+        """Return True if the device currently reports this function."""
+        return (
+            self.data is not None
+            and fn in self.addr
+            and self.addr[fn] in self.data
+        )
+
+    async def async_write(self, values: dict[str, Any]) -> None:
+        """Write one or more semantic function values, then refresh."""
+        addr_values = {
+            self.addr[fn]: value for fn, value in values.items() if fn in self.addr
+        }
+        if not addr_values:
+            return
+        await self._send(addr_values)
+        await self.async_request_refresh()
+
+    async def _send(self, addr_values: dict[str, Any]) -> None:
+        """Send address->value pairs to the device (mode-specific)."""
+        raise NotImplementedError
+
+    # -- device info --------------------------------------------------------
+    @property
+    def device_online(self) -> bool:
+        """Whether the device is considered reachable."""
+        return True
+
+    @property
+    def device_model(self) -> str | None:
+        """Model string for the device registry, if known."""
+        return self.entry.data.get("model") or None
+
+
+# ---------------------------------------------------------------------------
+# Cloud (Tuya sharing) mode
+# ---------------------------------------------------------------------------
 class TokenListener(SharingTokenListener):
     """Persist refreshed OAuth tokens back onto the config entry."""
 
@@ -48,13 +136,12 @@ class TokenListener(SharingTokenListener):
         if self.entry is None:
             return
         self.hass.config_entries.async_update_entry(
-            self.entry,
-            data={**self.entry.data, CONF_TOKEN_INFO: token_info},
+            self.entry, data={**self.entry.data, CONF_TOKEN_INFO: token_info}
         )
 
 
 def build_manager(entry: ConfigEntry, token_listener: SharingTokenListener) -> Manager:
-    """Construct a tuya-sharing Manager from a config entry."""
+    """Construct a tuya-sharing Manager from a config entry (or stub)."""
     return Manager(
         TUYA_CLIENT_ID,
         entry.data[CONF_USER_CODE],
@@ -65,28 +152,38 @@ def build_manager(entry: ConfigEntry, token_listener: SharingTokenListener) -> M
     )
 
 
-class ScandiaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Keep one fireplace's status in sync via the Tuya cloud."""
+class ScandiaCloudCoordinator(ScandiaBaseCoordinator):
+    """Control the fireplace through the Tuya cloud."""
+
+    brightness_max = CLOUD_BRIGHTNESS_MAX
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, manager: Manager) -> None:
-        """Set up the coordinator around an existing Manager."""
-        self.entry = entry
+        """Set up around an existing Manager."""
         self.manager = manager
-        self.device_id = entry.data[CONF_DEVICE_ID]
-        super().__init__(
-            hass, _LOGGER, name=DOMAIN, update_interval=UPDATE_INTERVAL
-        )
+        super().__init__(hass, entry, CLOUD_INTERVAL)
 
     @property
     def device(self) -> CustomerDevice | None:
-        """Return the current device object from the manager cache."""
+        """Return the device object from the manager cache."""
         return self.manager.device_map.get(self.device_id)
+
+    @property
+    def device_online(self) -> bool:
+        """Reflect the cloud-reported online state."""
+        device = self.device
+        return bool(device.online) if device else False
+
+    @property
+    def device_model(self) -> str | None:
+        """Prefer the cloud product name for the model."""
+        device = self.device
+        return (device.product_name if device else None) or super().device_model
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Refresh the device cache and return this device's status codes."""
         try:
             await self.hass.async_add_executor_job(self.manager.update_device_cache)
-        except Exception as err:  # noqa: BLE001 - surface any cloud error
+        except Exception as err:  # noqa: BLE001
             message = str(err).lower()
             if "token" in message or "authoriz" in message or "sign" in message:
                 raise ConfigEntryAuthFailed(str(err)) from err
@@ -94,24 +191,20 @@ class ScandiaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         device = self.device
         if device is None:
-            raise UpdateFailed(
-                f"Fireplace {self.device_id} is no longer on the account"
-            )
+            raise UpdateFailed(f"Fireplace {self.device_id} is no longer on the account")
         return dict(device.status)
 
-    async def async_send(self, commands: list[dict[str, Any]]) -> None:
-        """Send one or more {code, value} commands then refresh."""
-        _LOGGER.debug("Sending commands %r", commands)
+    async def _send(self, addr_values: dict[str, Any]) -> None:
+        commands = [{"code": code, "value": value} for code, value in addr_values.items()]
         await self.hass.async_add_executor_job(
             self.manager.send_commands, self.device_id, commands
         )
-        await self.async_request_refresh()
 
 
 class DeviceListener(SharingDeviceListener):
     """Bridge cloud push updates into the coordinator."""
 
-    def __init__(self, coordinator: ScandiaCoordinator) -> None:
+    def __init__(self, coordinator: ScandiaCloudCoordinator) -> None:
         """Store the coordinator to notify on updates."""
         self.coordinator = coordinator
 
@@ -129,3 +222,116 @@ class DeviceListener(SharingDeviceListener):
 
     def remove_device(self, device_id: str) -> None:
         """Ignore devices removed elsewhere."""
+
+
+# ---------------------------------------------------------------------------
+# Local (tinytuya) mode
+# ---------------------------------------------------------------------------
+def _make_local_device(
+    device_id: str, host: str, local_key: str, protocol_version: str
+) -> tinytuya.Device:
+    """Create and configure a tinytuya device object."""
+    device = tinytuya.Device(device_id, host, local_key)
+    try:
+        device.set_version(float(protocol_version))
+    except (TypeError, ValueError):
+        device.set_version(float(DEFAULT_PROTOCOL_VERSION))
+    return device
+
+
+def test_local_connection(
+    device_id: str, host: str, local_key: str, protocol_version: str
+) -> dict[str, Any]:
+    """Attempt a local status read and return the raw dps. Runs in executor."""
+    device = _make_local_device(device_id, host, local_key, protocol_version)
+    device.set_socketTimeout(5)
+    data = device.status()
+    device.close()
+    if not isinstance(data, dict) or "dps" not in data:
+        raise ConnectionError(f"Unexpected response from fireplace: {data!r}")
+    return data["dps"]
+
+
+class ScandiaLocalCoordinator(ScandiaBaseCoordinator):
+    """Control the fireplace directly over the LAN via tinytuya."""
+
+    brightness_max = LOCAL_BRIGHTNESS_MAX
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        """Open a persistent local connection."""
+        super().__init__(hass, entry, LOCAL_INTERVAL)
+        self._device = self._new_device()
+        self._device.set_socketPersistent(True)
+        self._refresh_attempted = False
+
+    def _new_device(self) -> tinytuya.Device:
+        device = _make_local_device(
+            self.entry.data[CONF_DEVICE_ID],
+            self.entry.data[CONF_HOST],
+            self.entry.data[CONF_LOCAL_KEY],
+            self.entry.data.get(CONF_PROTOCOL_VERSION, DEFAULT_PROTOCOL_VERSION),
+        )
+        device.set_socketTimeout(5)
+        return device
+
+    def _status(self) -> dict[str, Any]:
+        data = self._device.status()
+        if not isinstance(data, dict) or "dps" not in data:
+            raise UpdateFailed(f"Unexpected response from fireplace: {data!r}")
+        return data["dps"]
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        try:
+            data = await self.hass.async_add_executor_job(self._status)
+        except Exception as first_err:  # noqa: BLE001
+            # A stale local key (after re-pairing) looks like a dropped
+            # connection. Pull a fresh key from the cloud once, then retry.
+            if not self._refresh_attempted and await self._async_refresh_local_key():
+                self._refresh_attempted = True
+                try:
+                    data = await self.hass.async_add_executor_job(self._status)
+                except Exception as retry_err:  # noqa: BLE001
+                    raise UpdateFailed(
+                        f"Error communicating with fireplace: {retry_err}"
+                    ) from retry_err
+            else:
+                raise UpdateFailed(
+                    f"Error communicating with fireplace: {first_err}"
+                ) from first_err
+        self._refresh_attempted = False
+        return data
+
+    async def _async_refresh_local_key(self) -> bool:
+        """Re-fetch the local key from the Tuya cloud. Returns True if changed."""
+        if not self.entry.data.get(CONF_TOKEN_INFO):
+            return False
+        try:
+            manager = build_manager(self.entry, TokenListener(self.hass, None))
+            await self.hass.async_add_executor_job(manager.update_device_cache)
+            device = manager.device_map.get(self.device_id)
+        except Exception as err:  # noqa: BLE001 - best-effort
+            _LOGGER.debug("Could not refresh local key from cloud: %s", err)
+            return False
+
+        new_key = getattr(device, "local_key", None)
+        if not new_key or new_key == self.entry.data[CONF_LOCAL_KEY]:
+            return False
+
+        _LOGGER.info("Refreshed local key for %s from Tuya cloud", self.device_id)
+        self.hass.config_entries.async_update_entry(
+            self.entry, data={**self.entry.data, CONF_LOCAL_KEY: new_key}
+        )
+        await self.hass.async_add_executor_job(self._device.close)
+        self._device = self._new_device()
+        self._device.set_socketPersistent(True)
+        return True
+
+    async def _send(self, addr_values: dict[str, Any]) -> None:
+        await self.hass.async_add_executor_job(
+            self._device.set_multiple_values, addr_values
+        )
+
+    async def async_shutdown(self) -> None:
+        """Close the local socket on unload."""
+        await super().async_shutdown()
+        await self.hass.async_add_executor_job(self._device.close)

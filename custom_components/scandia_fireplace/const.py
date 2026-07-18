@@ -6,10 +6,14 @@ from typing import Final
 
 DOMAIN: Final = "scandia_fireplace"
 
+# --- Connection mode --------------------------------------------------------
+# Both modes are bootstrapped from the same QR (user-code) sign-in; the choice
+# only affects how commands are delivered at runtime.
+CONF_MODE: Final = "mode"
+MODE_CLOUD: Final = "cloud"  # commands via the Tuya cloud (works anywhere)
+MODE_LOCAL: Final = "local"  # commands direct over the LAN (fast, no cloud)
+
 # --- Tuya cloud sharing (QR / user-code login) -----------------------------
-# These mirror the login used by Home Assistant's official Tuya integration:
-# the user enters a "user code" from the Smart Life app and scans a QR code,
-# so no developer/IoT project is required.
 CONF_USER_CODE: Final = "user_code"
 CONF_TOKEN_INFO: Final = "token_info"
 CONF_TERMINAL_ID: Final = "terminal_id"
@@ -24,52 +28,93 @@ TUYA_RESPONSE_SUCCESS: Final = "success"
 TUYA_RESPONSE_RESULT: Final = "result"
 TUYA_RESPONSE_QR_CODE: Final = "qrcode"
 
-# The device this entry controls (chosen from the account during setup).
+# --- Device / local-connection details -------------------------------------
 CONF_DEVICE_ID: Final = "device_id"
 CONF_MODEL: Final = "model"
+CONF_LOCAL_KEY: Final = "local_key"
+CONF_HOST: Final = "host"
+CONF_PROTOCOL_VERSION: Final = "protocol_version"
 
-# --- Function-code mapping --------------------------------------------------
-# Cloud devices expose their functions as named "codes" (e.g. "switch",
-# "temp_set") rather than the numbered data points used for local control.
-# Codes vary between models, so every mapping is overridable from the options,
-# and the diagnostics download lists the codes your device actually reports.
-CONF_CODE_POWER: Final = "code_power"
-CONF_CODE_HEAT: Final = "code_heat"
-CONF_CODE_TARGET_TEMP: Final = "code_target_temp"
-CONF_CODE_CURRENT_TEMP: Final = "code_current_temp"
-CONF_CODE_FLAME_BRIGHTNESS: Final = "code_flame_brightness"
-CONF_CODE_FLAME_EFFECT: Final = "code_flame_effect"
-CONF_CODE_FLAME_SPEED: Final = "code_flame_speed"
-CONF_CODE_TIMER: Final = "code_timer"
-CONF_CODE_CHILD_LOCK: Final = "code_child_lock"
-CONF_CODE_PRESET: Final = "code_preset"
-CONF_CODE_POWER_W: Final = "code_power_w"
-CONF_CODE_ENERGY: Final = "code_energy"
+PROTOCOL_VERSIONS: Final = ["3.1", "3.2", "3.3", "3.4", "3.5"]
+DEFAULT_PROTOCOL_VERSION: Final = "3.3"
 
 CONF_MIN_TEMP: Final = "min_temp"
 CONF_MAX_TEMP: Final = "max_temp"
-
-# Sensible defaults for a standard Tuya electric-fireplace heater. The
-# flame-specific codes are left blank (disabled) because they vary widely; set
-# them from the options once identified via the "Raw data points" diagnostic.
-DEFAULT_CODE_POWER: Final = "switch"
-DEFAULT_CODE_HEAT: Final = ""
-DEFAULT_CODE_TARGET_TEMP: Final = "temp_set"
-DEFAULT_CODE_CURRENT_TEMP: Final = "temp_current"
-DEFAULT_CODE_FLAME_BRIGHTNESS: Final = "bright_value"
-DEFAULT_CODE_FLAME_EFFECT: Final = ""
-DEFAULT_CODE_FLAME_SPEED: Final = ""
-DEFAULT_CODE_TIMER: Final = "countdown_set"
-DEFAULT_CODE_CHILD_LOCK: Final = "child_lock"
-DEFAULT_CODE_PRESET: Final = "mode"
-DEFAULT_CODE_POWER_W: Final = ""
-DEFAULT_CODE_ENERGY: Final = ""
-
 DEFAULT_MIN_TEMP: Final = 15
 DEFAULT_MAX_TEMP: Final = 30
 
-# Flame effect / colour options (enum values the effect code accepts). Editable
-# in the options to match your firmware.
+# --- Semantic functions -----------------------------------------------------
+# Entities are written against these engine-neutral keys; the coordinator maps
+# each one to a Tuya "code" (cloud) or a numeric data point (local).
+FN_POWER: Final = "power"
+FN_HEAT: Final = "heat"
+FN_TARGET_TEMP: Final = "target_temp"
+FN_CURRENT_TEMP: Final = "current_temp"
+FN_FLAME_BRIGHTNESS: Final = "flame_brightness"
+FN_FLAME_EFFECT: Final = "flame_effect"
+FN_FLAME_SPEED: Final = "flame_speed"
+FN_TIMER: Final = "timer"
+FN_CHILD_LOCK: Final = "child_lock"
+FN_PRESET: Final = "preset"
+FN_POWER_W: Final = "power_w"
+FN_ENERGY: Final = "energy"
+
+# Ordered list of functions, and the shared option key used to store each
+# one's address. The address is a Tuya function code (cloud) or a numeric data
+# point (local); which is meant depends on the entry's mode.
+FUNCTIONS: Final = [
+    FN_POWER,
+    FN_HEAT,
+    FN_TARGET_TEMP,
+    FN_CURRENT_TEMP,
+    FN_FLAME_BRIGHTNESS,
+    FN_FLAME_EFFECT,
+    FN_FLAME_SPEED,
+    FN_TIMER,
+    FN_CHILD_LOCK,
+    FN_PRESET,
+    FN_POWER_W,
+    FN_ENERGY,
+]
+
+OPTION_KEY: Final = {fn: f"addr_{fn}" for fn in FUNCTIONS}
+
+# Default addresses per mode. A blank default disables that function until the
+# user maps it. Cloud values are Tuya function codes; local values are DPs.
+CLOUD_DEFAULTS: Final[dict[str, str]] = {
+    FN_POWER: "switch",
+    FN_HEAT: "",
+    FN_TARGET_TEMP: "temp_set",
+    FN_CURRENT_TEMP: "temp_current",
+    FN_FLAME_BRIGHTNESS: "bright_value",
+    FN_FLAME_EFFECT: "",
+    FN_FLAME_SPEED: "",
+    FN_TIMER: "countdown_set",
+    FN_CHILD_LOCK: "child_lock",
+    FN_PRESET: "mode",
+    FN_POWER_W: "",
+    FN_ENERGY: "",
+}
+
+LOCAL_DEFAULTS: Final[dict[str, str]] = {
+    FN_POWER: "1",
+    FN_HEAT: "107",
+    FN_TARGET_TEMP: "2",
+    FN_CURRENT_TEMP: "3",
+    FN_FLAME_BRIGHTNESS: "102",
+    FN_FLAME_EFFECT: "101",
+    FN_FLAME_SPEED: "103",
+    FN_TIMER: "106",
+    FN_CHILD_LOCK: "108",
+    FN_PRESET: "",
+    FN_POWER_W: "",
+    FN_ENERGY: "",
+}
+
+# Functions the options flow exposes as optional (all except power).
+OPTIONAL_FUNCTIONS: Final = [fn for fn in FUNCTIONS if fn != FN_POWER]
+
+# --- Enumerations / scaling -------------------------------------------------
 DEFAULT_FLAME_EFFECTS: Final = [
     "orange",
     "blue",
@@ -79,18 +124,14 @@ DEFAULT_FLAME_EFFECTS: Final = [
     "purple",
     "colourful",
 ]
-
-# Flame animation speed options.
 DEFAULT_FLAME_SPEEDS: Final = ["slow", "medium", "fast"]
-
-# Heat preset options (enum values the preset code accepts).
 DEFAULT_PRESET_MODES: Final = ["eco", "comfort", "boost"]
 
-# Energy is commonly reported in hundredths of a kWh.
-ENERGY_CODE_SCALE: Final = 0.01
+ENERGY_SCALE: Final = 0.01  # energy is usually reported in 0.01 kWh
 
-# Cloud brightness codes usually range 0-1000; Home Assistant uses 0-255.
-TUYA_BRIGHTNESS_MAX: Final = 1000
+# Brightness raw range differs: cloud codes use 0-1000, local DPs use 0-255.
+CLOUD_BRIGHTNESS_MAX: Final = 1000
+LOCAL_BRIGHTNESS_MAX: Final = 255
 
 PLATFORMS: Final = [
     "climate",

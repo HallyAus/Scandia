@@ -8,9 +8,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import ScandiaConfigEntry
-from .const import CONF_CODE_TIMER
+from .const import FN_TIMER
 from .entity import ScandiaEntity
-from .helpers import get_code
 
 
 async def async_setup_entry(
@@ -19,8 +18,9 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the countdown-timer number if the device exposes it."""
-    if get_code(entry, CONF_CODE_TIMER):
-        async_add_entities([ScandiaTimer(entry.runtime_data, entry)])
+    coordinator = entry.runtime_data
+    if coordinator.configured(FN_TIMER):
+        async_add_entities([ScandiaTimer(coordinator, entry)])
 
 
 class ScandiaTimer(ScandiaEntity, NumberEntity):
@@ -35,15 +35,14 @@ class ScandiaTimer(ScandiaEntity, NumberEntity):
     _attr_native_unit_of_measurement = UnitOfTime.HOURS
 
     def __init__(self, coordinator, entry: ScandiaConfigEntry) -> None:
-        """Cache the timer code."""
+        """Cache the entity id."""
         super().__init__(coordinator)
-        self._code_timer = get_code(entry, CONF_CODE_TIMER)
         self._attr_unique_id = f"{coordinator.device_id}_timer"
 
     @property
     def native_value(self) -> float | None:
         """Return the currently set timer value."""
-        value = self._code_value(self._code_timer)
+        value = self.coordinator.read(FN_TIMER)
         try:
             return float(value) if value is not None else None
         except (TypeError, ValueError):
@@ -51,9 +50,7 @@ class ScandiaTimer(ScandiaEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the countdown timer."""
-        await self.coordinator.async_send(
-            [{"code": self._code_timer, "value": int(value)}]
-        )
+        await self.coordinator.async_write({FN_TIMER: int(value)})
 
     @callback
     def _handle_coordinator_update(self) -> None:

@@ -1,4 +1,4 @@
-"""The Scandia Fireplace integration (Tuya cloud, QR login)."""
+"""The Scandia Fireplace integration (Tuya cloud or local, QR sign-in)."""
 
 from __future__ import annotations
 
@@ -7,38 +7,28 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, PLATFORMS
+from .const import CONF_MODE, DOMAIN, MODE_CLOUD, PLATFORMS
 from .coordinator import (
     DeviceListener,
-    ScandiaCoordinator,
+    ScandiaBaseCoordinator,
+    ScandiaCloudCoordinator,
+    ScandiaLocalCoordinator,
     TokenListener,
     build_manager,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-ScandiaConfigEntry = ConfigEntry[ScandiaCoordinator]
+ScandiaConfigEntry = ConfigEntry[ScandiaBaseCoordinator]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ScandiaConfigEntry) -> bool:
     """Set up Scandia Fireplace from a config entry."""
-    token_listener = TokenListener(hass, entry)
-    manager = build_manager(entry, token_listener)
-
-    coordinator = ScandiaCoordinator(hass, entry, manager)
-
-    listener = DeviceListener(coordinator)
-    manager.add_device_listener(listener)
-
-    # Pull the initial device list (raises ConfigEntryNotReady on failure)...
-    await coordinator.async_config_entry_first_refresh()
-
-    # ...then start the push (MQTT) connection. Failure here is non-fatal: we
-    # simply fall back to periodic polling.
-    try:
-        await hass.async_add_executor_job(manager.refresh_mq)
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.warning("Tuya push connection unavailable, will poll: %s", err)
+    if entry.data.get(CONF_MODE) == MODE_CLOUD:
+        coordinator: ScandiaBaseCoordinator = await _async_setup_cloud(hass, entry)
+    else:
+        coordinator = ScandiaLocalCoordinator(hass, entry)
+        await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
@@ -48,21 +38,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ScandiaConfigEntry) -> b
     return True
 
 
+async def _async_setup_cloud(
+    hass: HomeAssistant, entry: ScandiaConfigEntry
+) -> ScandiaCloudCoordinator:
+    """Build and start the cloud coordinator."""
+    manager = build_manager(entry, TokenListener(hass, entry))
+    coordinator = ScandiaCloudCoordinator(hass, entry, manager)
+    manager.add_device_listener(DeviceListener(coordinator))
+
+    await coordinator.async_config_entry_first_refresh()
+    try:
+        await hass.async_add_executor_job(manager.refresh_mq)
+    except Exception as err:  # noqa: BLE001 - push is optional, we still poll
+        _LOGGER.warning("Tuya push connection unavailable, will poll: %s", err)
+    return coordinator
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ScandiaConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        coordinator: ScandiaCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
-        mq = getattr(coordinator.manager, "mq", None)
-        if mq is not None:
-            await hass.async_add_executor_job(mq.stop)
+        coordinator: ScandiaBaseCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        if isinstance(coordinator, ScandiaCloudCoordinator):
+            mq = getattr(coordinator.manager, "mq", None)
+            if mq is not None:
+                await hass.async_add_executor_job(mq.stop)
+        elif isinstance(coordinator, ScandiaLocalCoordinator):
+            await coordinator.async_shutdown()
     return unload_ok
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ScandiaConfigEntry) -> None:
     """Revoke the cloud session when the integration is removed."""
-    token_listener = TokenListener(hass, entry)
-    manager = build_manager(entry, token_listener)
+    if not entry.data.get("token_info"):
+        return
+    manager = build_manager(entry, TokenListener(hass, entry))
     try:
         await hass.async_add_executor_job(manager.unload)
     except Exception as err:  # noqa: BLE001 - best-effort logout

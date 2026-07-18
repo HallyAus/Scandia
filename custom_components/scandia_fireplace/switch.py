@@ -9,9 +9,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import ScandiaConfigEntry
-from .const import CONF_CODE_CHILD_LOCK
+from .const import FN_CHILD_LOCK
 from .entity import ScandiaEntity
-from .helpers import get_code
 
 
 async def async_setup_entry(
@@ -20,8 +19,9 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the child-lock switch if the device exposes it."""
-    if get_code(entry, CONF_CODE_CHILD_LOCK):
-        async_add_entities([ScandiaChildLock(entry.runtime_data, entry)])
+    coordinator = entry.runtime_data
+    if coordinator.configured(FN_CHILD_LOCK):
+        async_add_entities([ScandiaChildLock(coordinator, entry)])
 
 
 class ScandiaChildLock(ScandiaEntity, SwitchEntity):
@@ -31,23 +31,22 @@ class ScandiaChildLock(ScandiaEntity, SwitchEntity):
     _attr_icon = "mdi:lock"
 
     def __init__(self, coordinator, entry: ScandiaConfigEntry) -> None:
-        """Cache the child-lock code."""
+        """Cache the entity id."""
         super().__init__(coordinator)
-        self._code_lock = get_code(entry, CONF_CODE_CHILD_LOCK)
         self._attr_unique_id = f"{coordinator.device_id}_child_lock"
 
     @property
     def is_on(self) -> bool:
         """Return True when the child lock is engaged."""
-        return bool(self._code_value(self._code_lock))
+        return bool(self.coordinator.read(FN_CHILD_LOCK))
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Engage the child lock."""
-        await self.coordinator.async_send([{"code": self._code_lock, "value": True}])
+        await self.coordinator.async_write({FN_CHILD_LOCK: True})
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Release the child lock."""
-        await self.coordinator.async_send([{"code": self._code_lock, "value": False}])
+        await self.coordinator.async_write({FN_CHILD_LOCK: False})
 
     @callback
     def _handle_coordinator_update(self) -> None:
