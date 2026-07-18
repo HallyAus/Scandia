@@ -3,7 +3,7 @@
 Two kinds of sensors:
 
 * State sensors that show the current flame / flame-log / top-light colour, so
-  the per-preset buttons have live feedback.
+  the per-preset buttons have live feedback. Their labels come from the profile.
 * Auto-discovered diagnostic sensors: one (disabled by default) for every raw
   endpoint the device reports that isn't already backed by another entity.
 """
@@ -18,14 +18,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import ScandiaConfigEntry
-from .const import (
-    FLAME_EFFECT_OPTIONS,
-    FLAME_LOG_OPTIONS,
-    FN_FLAME_EFFECT,
-    FN_FLAME_LOG,
-    FN_TOP_LIGHT,
-    TOP_LIGHT_OPTIONS,
-)
+from .const import FN_FLAME_EFFECT, FN_FLAME_LOG, FN_TOP_LIGHT
 from .entity import ScandiaEntity
 
 
@@ -34,28 +27,21 @@ class ScandiaStateSensorDescription(SensorEntityDescription):
     """Describes a sensor that shows the current label of an enum function."""
 
     function: str
-    value_labels: dict[str, str]
 
 
 STATE_SENSORS: tuple[ScandiaStateSensorDescription, ...] = (
     ScandiaStateSensorDescription(
-        key="flame_colour",
-        function=FN_FLAME_EFFECT,
-        value_labels=FLAME_EFFECT_OPTIONS,
-        name="Flame colour",
-        icon="mdi:fire",
+        key="flame_colour", function=FN_FLAME_EFFECT, name="Flame colour", icon="mdi:fire"
     ),
     ScandiaStateSensorDescription(
         key="flame_log_colour",
         function=FN_FLAME_LOG,
-        value_labels=FLAME_LOG_OPTIONS,
         name="Flame log colour",
         icon="mdi:fireplace",
     ),
     ScandiaStateSensorDescription(
         key="top_light_colour",
         function=FN_TOP_LIGHT,
-        value_labels=TOP_LIGHT_OPTIONS,
         name="Top light colour",
         icon="mdi:lightbulb-on",
     ),
@@ -73,6 +59,7 @@ async def async_setup_entry(
         ScandiaStateSensor(coordinator, description)
         for description in STATE_SENSORS
         if coordinator.configured(description.function)
+        and coordinator.option_labels(description.function)
     )
 
     # Auto-discovery: surface every endpoint (Tuya code or local DP) the device
@@ -106,10 +93,11 @@ class ScandiaStateSensor(ScandiaEntity, SensorEntity):
     def __init__(
         self, coordinator, description: ScandiaStateSensorDescription
     ) -> None:
-        """Store the description."""
+        """Store the description and the profile's label map."""
         super().__init__(coordinator)
         self.entity_description = description
         self._attr_unique_id = f"{coordinator.device_id}_{description.key}"
+        self._value_labels = coordinator.option_labels(description.function)
 
     @property
     def native_value(self) -> str | None:
@@ -117,7 +105,7 @@ class ScandiaStateSensor(ScandiaEntity, SensorEntity):
         value = self.coordinator.read(self.entity_description.function)
         if value is None:
             return None
-        return self.entity_description.value_labels.get(str(value), str(value))
+        return self._value_labels.get(str(value), str(value))
 
     @callback
     def _handle_coordinator_update(self) -> None:

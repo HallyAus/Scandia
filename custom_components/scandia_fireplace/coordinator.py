@@ -21,22 +21,26 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import (
     CLOUD_DEFAULTS,
+    CLOUD_LABELS,
     CONF_DEVICE_ID,
     CONF_ENDPOINT,
     CONF_HOST,
     CONF_LOCAL_KEY,
     CONF_MODE,
+    CONF_PROFILE,
     CONF_PROTOCOL_VERSION,
     CONF_TERMINAL_ID,
     CONF_TOKEN_INFO,
     CONF_USER_CODE,
+    DEFAULT_PROFILE,
     DEFAULT_PROTOCOL_VERSION,
     DOMAIN,
     FUNCTIONS,
-    LOCAL_DEFAULTS,
     MODE_CLOUD,
     OPTION_KEY,
     TUYA_CLIENT_ID,
+    profile_addresses,
+    profile_labels,
 )
 from .discovery import scan_lan
 
@@ -48,12 +52,13 @@ LOCAL_INTERVAL = timedelta(seconds=30)
 
 def build_address_map(entry: ConfigEntry) -> dict[str, str]:
     """Resolve semantic function -> address (code or DP) from the options."""
-    defaults = (
-        CLOUD_DEFAULTS if entry.data.get(CONF_MODE) == MODE_CLOUD else LOCAL_DEFAULTS
-    )
+    if entry.data.get(CONF_MODE) == MODE_CLOUD:
+        defaults = CLOUD_DEFAULTS
+    else:
+        defaults = profile_addresses(entry.data.get(CONF_PROFILE, DEFAULT_PROFILE))
     addr: dict[str, str] = {}
     for fn in FUNCTIONS:
-        raw = entry.options.get(OPTION_KEY[fn], defaults[fn])
+        raw = entry.options.get(OPTION_KEY[fn], defaults.get(fn, ""))
         text = str(raw).strip() if raw is not None else ""
         if text:
             addr[fn] = text
@@ -66,16 +71,24 @@ class ScandiaBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(
         self, hass: HomeAssistant, entry: ConfigEntry, interval: timedelta
     ) -> None:
-        """Set up the shared address map."""
+        """Set up the shared address map and preset labels."""
         self.entry = entry
         self.device_id = entry.data[CONF_DEVICE_ID]
         self.addr = build_address_map(entry)
+        if entry.data.get(CONF_MODE) == MODE_CLOUD:
+            self._labels = CLOUD_LABELS
+        else:
+            self._labels = profile_labels(entry.data.get(CONF_PROFILE, DEFAULT_PROFILE))
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=interval)
 
     # -- semantic access ----------------------------------------------------
     def configured(self, fn: str) -> bool:
         """Return True if this function is mapped to an address."""
         return fn in self.addr
+
+    def option_labels(self, fn: str) -> dict[str, str]:
+        """Return the {raw value: friendly label} preset map for a function."""
+        return self._labels.get(fn, {})
 
     def read(self, fn: str) -> Any:
         """Return the current value of a function, or None."""

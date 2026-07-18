@@ -14,12 +14,13 @@ retrieves both the cloud token and the device's local key, so you can pick:
 
 Either way you get proper fireplace entities:
 
-- **Climate** — power, heat / flame-only mode, target & current temperature, presets
-- **Light** — flame on/off, brightness and colour effect
-- **Select** — flame animation speed
-- **Number** — auto-off countdown timer
-- **Switch** — child lock
-- **Sensor** — current temperature, plus optional power (W) & energy (kWh)
+- **Switch** — master power
+- **Buttons** — one per preset: every flame colour, fuel-bed/ember colour and top-light colour
+- **Select** — heater (Off/Low/High) and countdown timer (Off/1h–6h)
+- **Sensor** — the currently selected flame / log / top-light colour, plus auto-discovered raw endpoints
 
-Address mappings are editable from the options, and a diagnostics download lists
-what your device reports.
+**Works with rebadges too.** The Aurora is a widely rebranded Tuya OEM
+fireplace — Benrocks, Yacoiel, Velaychimney, Auchsiag, Mystflame and many
+unbranded inserts use the same board. Pick a **device profile** at setup, and
+remap any differing data points from the options. A diagnostics download lists
+everything your device reports.

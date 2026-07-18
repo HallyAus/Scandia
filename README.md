@@ -17,9 +17,14 @@ can pick how it's controlled:
 - **🏠 Local** — commands go **directly over your LAN** (via `tinytuya`) using
   the key retrieved during sign-in. Faster, and keeps working with no internet.
 
-Either way you get proper, fireplace-specific entities (flame light, flame
-speed, presets, timer, child lock) rather than the generic controls the official
-Tuya integration produces.
+Either way you get proper, fireplace-specific entities — a button for every
+flame colour, a heater and timer dropdown, and a power switch — rather than the
+generic controls the official Tuya integration produces.
+
+> 🔁 **Not a Scandia?** The Aurora is a widely rebadged Tuya OEM fireplace. See
+> **[Supported fireplaces](#supported-fireplaces)** — Benrocks, Yacoiel,
+> Velaychimney, Auchsiag, Mystflame and many unbranded inserts use the same
+> board and work via a selectable device profile (or the address remap).
 
 > 📖 **Full step-by-step instructions for both modes:** see
 > **[docs/SETUP.md](docs/SETUP.md)**. The sections below are a condensed
@@ -29,16 +34,19 @@ Tuya integration produces.
 
 | Entity | Platform | What it controls |
 | --- | --- | --- |
-| Fireplace | `climate` | Power on/off, heat vs. flame-only mode, target & current temperature, heat presets |
-| Flame | `light` | Flame on/off, brightness, colour/effect |
-| Flame speed | `select` | Flame animation speed |
-| Auto-off timer | `number` | Countdown auto-off timer (hours) |
-| Child lock | `switch` | Engage/release the child lock |
-| Current temperature | `sensor` | Room temperature |
-| Power / Energy | `sensor` | Live power (W) and cumulative energy (kWh), if reported |
+| Power | `switch` | Turn the whole fireplace on/off |
+| Flame colour | `button` (×13) | One button per flame colour — tap to apply |
+| Flame log colour | `button` (×13) | One button per fuel-bed / ember colour |
+| Top light | `button` (×4) | Downlight: Off / Yellow / Blue / Purple (Aurora) |
+| Heater | `select` | Off / Low (750W) / High (1500W) |
+| Timer | `select` | Countdown auto-off (Off / 1h–6h) |
+| Flame / log / top-light colour | `sensor` | The currently selected colour (feedback for the buttons) |
+| Endpoint _n_ | `sensor` (diagnostic) | Auto-discovered raw data points, disabled by default |
 
-Entities are created only when the matching function is mapped and present, so
-you won't see controls your unit doesn't support.
+Controls are created only for the functions your profile maps, so you won't see
+buttons your unit doesn't support. This unit has no dimmer or thermostat, so
+there is no brightness slider or temperature — the flame is entirely preset
+(colour) based.
 
 ## Installation (HACS)
 
@@ -87,36 +95,49 @@ Local mode is only offered if the sign-in returned a local key for your device.
 ## Function mapping (advanced)
 
 Tuya devices address functions differently in each mode: **function codes**
-(cloud, e.g. `switch`, `temp_set`) or **numbered data points** (local, e.g. `1`,
-`2`). The integration ships with sensible defaults, but some — heating element,
-flame effect/speed, presets, power/energy — vary between models and may need
-setting.
-
-If a control is missing or wrong:
+(cloud, e.g. `switch`, `countdown_set`) or **numbered data points** (local, e.g.
+`1`, `101`). In local mode the defaults come from the **device profile** you
+picked at setup. If a control is missing or wrong:
 
 1. **Settings → Devices & services → Scandia Fireplace → ⋮ → Download
    diagnostics**. The `raw_status` section lists every address the device
-   reports, with its live value, and `address_map` shows the current mapping.
-2. Toggle a function on the fireplace/app and re-download to see which address
+   reports with its live value, `address_map` shows the current mapping, and
+   `endpoint_spec` includes the full Tuya function spec from the cloud.
+2. Toggle a function on the fireplace/app and re-download (or enable the
+   auto-discovered **Endpoint _n_** diagnostic sensors) to see which address
    changes.
 3. Enter the correct addresses under **Configure**. Leave a field blank to
    disable that feature.
 
-### Default mapping
+### Default mapping (local DPs)
 
-| Function | Cloud code | Local DP |
+| Function | Aurora profile | Auchsiag profile |
 | --- | --- | --- |
-| Power / flame on-off | `switch` | `1` |
-| Target temperature | `temp_set` | `2` |
-| Current temperature | `temp_current` | `3` |
-| Flame brightness | `bright_value` | `102` |
-| Flame effect / colour | _unset_ | `101` |
-| Flame speed | _unset_ | `103` |
-| Countdown timer | `countdown_set` | `106` |
-| Child lock | `child_lock` | `108` |
-| Heat preset | `mode` | _unset_ |
-| Heating element | _unset_ | `107` |
-| Power / Energy sensors | _unset_ | _unset_ |
+| Power | `1` | `1` |
+| Heater (Off/Lo/Hi) | `4` | `5` |
+| Top light colour | `5` | _none_ |
+| Countdown timer | `19` | `13` |
+| Flame colour | `101` (`L01`–`L13`) | `17` (named) |
+| Flame log / ember colour | `102` (`C01`–`C13`) | `101` (named) |
+
+In cloud mode the Tuya API only exposes `switch` (power) and `countdown_set`
+(timer) for this OEM, so the colour/heater controls are available in **local
+mode only**.
+
+## Supported fireplaces
+
+This is a rebadged Tuya OEM fireplace sold under many names. Pick the profile
+that matches your unit at setup (local mode). Where the data points differ, use
+the **Configure** address remap.
+
+| Profile | Known brands / models | Notes |
+| --- | --- | --- |
+| **Aurora** | Scandia Aurora (36″/50″/74″); most "**13 flame / 13 fuel-bed / 3 top-light**" inserts — Benrocks, Yacoiel, Velaychimney, Mystflame, many unbranded Amazon inserts (33″–88″) | Numbered colours, top light |
+| **Auchsiag** | Auchsiag and named-colour clones (Auto/Red/Yellow/… flame, named embers) | No top light; flame speed/brightness show as diagnostic endpoints |
+
+Confidence varies by brand and rebadges sometimes ship different data points —
+if a colour button does nothing, download diagnostics and remap. PRs adding new
+brand profiles are welcome.
 
 ## Troubleshooting
 

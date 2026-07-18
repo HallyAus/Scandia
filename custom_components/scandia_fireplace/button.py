@@ -1,8 +1,9 @@
 """Button platform for the Scandia Fireplace: one button per flame preset.
 
 Each colour the fireplace supports becomes its own button — tap it to jump
-straight to that flame colour, flame-log colour, or top-light colour. The
-current selection is shown by the matching sensor.
+straight to that flame colour, flame-log colour, or top-light colour. The exact
+presets come from the device profile; the current selection is shown by the
+matching sensor.
 """
 
 from __future__ import annotations
@@ -14,14 +15,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import ScandiaConfigEntry
-from .const import (
-    FLAME_EFFECT_OPTIONS,
-    FLAME_LOG_OPTIONS,
-    FN_FLAME_EFFECT,
-    FN_FLAME_LOG,
-    FN_TOP_LIGHT,
-    TOP_LIGHT_OPTIONS,
-)
+from .const import FN_FLAME_EFFECT, FN_FLAME_LOG, FN_TOP_LIGHT
 from .entity import ScandiaEntity
 
 
@@ -32,28 +26,12 @@ class ScandiaButtonGroup:
     function: str
     label: str
     icon: str
-    presets: dict[str, str]
 
 
 BUTTON_GROUPS: tuple[ScandiaButtonGroup, ...] = (
-    ScandiaButtonGroup(
-        function=FN_FLAME_EFFECT,
-        label="Flame",
-        icon="mdi:fire",
-        presets=FLAME_EFFECT_OPTIONS,
-    ),
-    ScandiaButtonGroup(
-        function=FN_FLAME_LOG,
-        label="Flame log",
-        icon="mdi:fireplace",
-        presets=FLAME_LOG_OPTIONS,
-    ),
-    ScandiaButtonGroup(
-        function=FN_TOP_LIGHT,
-        label="Top light",
-        icon="mdi:lightbulb-on",
-        presets=TOP_LIGHT_OPTIONS,
-    ),
+    ScandiaButtonGroup(function=FN_FLAME_EFFECT, label="Flame", icon="mdi:fire"),
+    ScandiaButtonGroup(function=FN_FLAME_LOG, label="Flame log", icon="mdi:fireplace"),
+    ScandiaButtonGroup(function=FN_TOP_LIGHT, label="Top light", icon="mdi:lightbulb-on"),
 )
 
 
@@ -68,7 +46,7 @@ async def async_setup_entry(
         ScandiaPresetButton(coordinator, group, value, label)
         for group in BUTTON_GROUPS
         if coordinator.configured(group.function)
-        for value, label in group.presets.items()
+        for value, label in coordinator.option_labels(group.function).items()
     ]
     async_add_entities(buttons)
 

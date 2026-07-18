@@ -37,15 +37,17 @@ from .const import (
     CONF_LOCAL_KEY,
     CONF_MODE,
     CONF_MODEL,
+    CONF_PROFILE,
     CONF_PROTOCOL_VERSION,
     CONF_TERMINAL_ID,
     CONF_TOKEN_INFO,
     CONF_USER_CODE,
+    DEFAULT_PROFILE,
     DEFAULT_PROTOCOL_VERSION,
+    DEVICE_PROFILES,
     DOMAIN,
     FN_POWER,
     FUNCTIONS,
-    LOCAL_DEFAULTS,
     MODE_CLOUD,
     MODE_LOCAL,
     OPTION_KEY,
@@ -55,6 +57,7 @@ from .const import (
     TUYA_RESPONSE_RESULT,
     TUYA_RESPONSE_SUCCESS,
     TUYA_SCHEMA,
+    profile_addresses,
 )
 from .coordinator import TokenListener, build_manager, test_local_connection
 from .discovery import scan_lan
@@ -286,6 +289,7 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_HOST: host,
                         CONF_LOCAL_KEY: self._device["local_key"],
                         CONF_PROTOCOL_VERSION: version,
+                        CONF_PROFILE: user_input[CONF_PROFILE],
                     },
                 )
 
@@ -297,6 +301,11 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
         default_version = _normalise_version(
             (user_input or {}).get(CONF_PROTOCOL_VERSION) or discovered.get("version")
         )
+        default_profile = (user_input or {}).get(CONF_PROFILE) or DEFAULT_PROFILE
+        profile_options = [
+            SelectOptionDict(value=key, label=profile["label"])
+            for key, profile in DEVICE_PROFILES.items()
+        ]
         return self.async_show_form(
             step_id="local",
             data_schema=vol.Schema(
@@ -307,6 +316,13 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
                     ): SelectSelector(
                         SelectSelectorConfig(
                             options=PROTOCOL_VERSIONS, mode=SelectSelectorMode.DROPDOWN
+                        )
+                    ),
+                    vol.Required(
+                        CONF_PROFILE, default=default_profile
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=profile_options, mode=SelectSelectorMode.DROPDOWN
                         )
                     ),
                 }
@@ -356,11 +372,12 @@ class ScandiaOptionsFlow(OptionsFlow):
             return self.async_create_entry(title="", data=user_input)
 
         options = self.config_entry.options
-        defaults = (
-            CLOUD_DEFAULTS
-            if self.config_entry.data.get(CONF_MODE) == MODE_CLOUD
-            else LOCAL_DEFAULTS
-        )
+        if self.config_entry.data.get(CONF_MODE) == MODE_CLOUD:
+            defaults = CLOUD_DEFAULTS
+        else:
+            defaults = profile_addresses(
+                self.config_entry.data.get(CONF_PROFILE, DEFAULT_PROFILE)
+            )
 
         schema_dict: dict[Any, Any] = {}
         for fn in FUNCTIONS:

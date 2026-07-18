@@ -29,10 +29,11 @@
       },
       "local": {
         "title": "Confirm local connection",
-        "description": "The local key was retrieved automatically. Confirm the fireplace's IP address (auto-detected where possible — otherwise enter it from your router and reserve it) and protocol version.",
+        "description": "The local key was retrieved automatically. Confirm the fireplace's IP address (auto-detected where possible — otherwise enter it from your router and reserve it), the protocol version, and the device profile that matches your fireplace's controls.",
         "data": {
           "host": "IP address",
-          "protocol_version": "Tuya protocol version"
+          "protocol_version": "Tuya protocol version",
+          "profile": "Fireplace model / profile"
         }
       }
     },
