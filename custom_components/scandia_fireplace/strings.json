@@ -38,7 +38,8 @@
     },
     "abort": {
       "already_configured": "This fireplace is already configured.",
-      "reconfigure_successful": "The fireplace connection was updated."
+      "reconfigure_successful": "The fireplace connection was updated.",
+      "not_scandia": "This device is not a configured Scandia fireplace."
     }
   },
   "options": {
@@ -59,6 +60,9 @@
           "dp_flame_speed": "Flame speed DP",
           "dp_timer": "Countdown timer DP",
           "dp_child_lock": "Child lock DP",
+          "dp_preset": "Heat preset DP (eco/comfort/boost)",
+          "dp_power_w": "Power sensor DP (watts)",
+          "dp_energy": "Energy sensor DP (kWh)",
           "min_temp": "Minimum target temperature (°C)",
           "max_temp": "Maximum target temperature (°C)",
           "scan_interval": "Polling interval (seconds)"
@@ -78,6 +82,11 @@
     },
     "switch": {
       "child_lock": { "name": "Child lock" }
+    },
+    "sensor": {
+      "current_temperature": { "name": "Current temperature" },
+      "power": { "name": "Power" },
+      "energy": { "name": "Energy" }
     }
   }
 }

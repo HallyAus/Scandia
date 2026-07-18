@@ -12,6 +12,7 @@ CONF_LOCAL_KEY: Final = "local_key"
 CONF_HOST: Final = "host"
 CONF_PROTOCOL_VERSION: Final = "protocol_version"
 CONF_MODEL: Final = "model"
+CONF_MAC: Final = "mac"
 
 # Tuya cloud credentials (used to auto-fetch the local key, and to refresh it
 # automatically if it changes after re-pairing).
@@ -33,6 +34,9 @@ CONF_DP_FLAME_EFFECT: Final = "dp_flame_effect"
 CONF_DP_FLAME_SPEED: Final = "dp_flame_speed"
 CONF_DP_TIMER: Final = "dp_timer"
 CONF_DP_CHILD_LOCK: Final = "dp_child_lock"
+CONF_DP_PRESET: Final = "dp_preset"
+CONF_DP_POWER_W: Final = "dp_power_w"
+CONF_DP_ENERGY: Final = "dp_energy"
 CONF_MIN_TEMP: Final = "min_temp"
 CONF_MAX_TEMP: Final = "max_temp"
 CONF_TEMP_UNIT: Final = "temp_unit"
@@ -63,6 +67,13 @@ DEFAULT_DP_FLAME_SPEED: Final = "103"  # enum: flame animation speed
 DEFAULT_DP_TIMER: Final = "106"  # int: countdown timer (hours)
 DEFAULT_DP_CHILD_LOCK: Final = "108"  # bool: child lock
 
+# These vary widely between models and are disabled by default. Enable them by
+# setting the DP number in the integration options once you've identified them
+# from the "Raw data points" diagnostic.
+DEFAULT_DP_PRESET: Final = ""  # enum: heat preset (eco/comfort/boost)
+DEFAULT_DP_POWER_W: Final = ""  # int: instantaneous power, watts
+DEFAULT_DP_ENERGY: Final = ""  # int: cumulative energy, often in 0.01 kWh
+
 DEFAULT_MIN_TEMP: Final = 15
 DEFAULT_MAX_TEMP: Final = 30
 
@@ -90,10 +101,18 @@ DEFAULT_FLAME_BRIGHTNESS_LEVELS: Final = ["25", "51", "102", "153", "204", "255"
 # Flame animation speed options.
 DEFAULT_FLAME_SPEEDS: Final = ["slow", "medium", "fast"]
 
+# Heat preset options (enum strings the preset DP accepts). Editable if your
+# firmware uses different names.
+DEFAULT_PRESET_MODES: Final = ["eco", "comfort", "boost"]
+
+# Energy DP is commonly reported in hundredths of a kWh.
+ENERGY_DP_SCALE: Final = 0.01
+
 PLATFORMS: Final = [
     "climate",
     "light",
     "select",
     "number",
     "switch",
+    "sensor",
 ]

@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.helpers.device_info import DeviceInfo
+from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, format_mac
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_DEVICE_ID, CONF_MODEL, DOMAIN
+from .const import CONF_DEVICE_ID, CONF_MAC, CONF_MODEL, DOMAIN
 from .coordinator import ScandiaCoordinator
 
 
@@ -21,8 +22,16 @@ class ScandiaEntity(CoordinatorEntity[ScandiaCoordinator]):
         super().__init__(coordinator)
         device_id = coordinator.entry.data[CONF_DEVICE_ID]
         model = coordinator.entry.data.get(CONF_MODEL) or "Aurora Electric Fire"
+
+        # A MAC (when known) lets Home Assistant track the device across IP
+        # changes via DHCP discovery.
+        connections = set()
+        if mac := coordinator.entry.data.get(CONF_MAC):
+            connections.add((CONNECTION_NETWORK_MAC, format_mac(mac)))
+
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device_id)},
+            connections=connections,
             name=coordinator.entry.title,
             manufacturer="Scandia",
             model=model,

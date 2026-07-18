@@ -20,6 +20,8 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import callback
+from homeassistant.helpers.device_registry import format_mac
+from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
@@ -40,15 +42,19 @@ from .const import (
     CONF_DEVICE_ID,
     CONF_DP_CHILD_LOCK,
     CONF_DP_CURRENT_TEMP,
+    CONF_DP_ENERGY,
     CONF_DP_FLAME_BRIGHTNESS,
     CONF_DP_FLAME_EFFECT,
     CONF_DP_FLAME_SPEED,
     CONF_DP_HEAT,
     CONF_DP_POWER,
+    CONF_DP_POWER_W,
+    CONF_DP_PRESET,
     CONF_DP_TARGET_TEMP,
     CONF_DP_TIMER,
     CONF_HOST,
     CONF_LOCAL_KEY,
+    CONF_MAC,
     CONF_MAX_TEMP,
     CONF_MIN_TEMP,
     CONF_MODEL,
@@ -57,11 +63,14 @@ from .const import (
     DEFAULT_CLOUD_REGION,
     DEFAULT_DP_CHILD_LOCK,
     DEFAULT_DP_CURRENT_TEMP,
+    DEFAULT_DP_ENERGY,
     DEFAULT_DP_FLAME_BRIGHTNESS,
     DEFAULT_DP_FLAME_EFFECT,
     DEFAULT_DP_FLAME_SPEED,
     DEFAULT_DP_HEAT,
     DEFAULT_DP_POWER,
+    DEFAULT_DP_POWER_W,
+    DEFAULT_DP_PRESET,
     DEFAULT_DP_TARGET_TEMP,
     DEFAULT_DP_TIMER,
     DEFAULT_MAX_TEMP,
@@ -195,6 +204,7 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
                             CONF_HOST: host,
                             CONF_LOCAL_KEY: local_key,
                             CONF_PROTOCOL_VERSION: version,
+                            CONF_MAC: device.get("mac", ""),
                             **self._cloud_creds,
                         },
                     )
@@ -255,6 +265,30 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
                 "discovered": str(len(self._discovered)),
             },
         )
+
+    async def async_step_dhcp(
+        self, discovery_info: DhcpServiceInfo
+    ) -> ConfigFlowResult:
+        """Track a known fireplace's IP address as it changes on the network.
+
+        With ``registered_devices`` set in the manifest, this only fires for
+        devices already in the registry (matched by MAC), so we simply keep the
+        stored IP in sync — no new setup is triggered here.
+        """
+        mac = format_mac(discovery_info.macaddress)
+        for entry in self._async_current_entries(include_ignore=False):
+            entry_mac = entry.data.get(CONF_MAC)
+            if entry_mac and format_mac(entry_mac) == mac:
+                if entry.data.get(CONF_HOST) != discovery_info.ip:
+                    _LOGGER.debug(
+                        "Updating %s IP to %s via DHCP", entry.title, discovery_info.ip
+                    )
+                    self.hass.config_entries.async_update_entry(
+                        entry, data={**entry.data, CONF_HOST: discovery_info.ip}
+                    )
+                    self.hass.config_entries.async_schedule_reload(entry.entry_id)
+                return self.async_abort(reason="already_configured")
+        return self.async_abort(reason="not_scandia")
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
@@ -379,6 +413,18 @@ class ScandiaOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_DP_CHILD_LOCK,
                     default=_dp_default(CONF_DP_CHILD_LOCK, DEFAULT_DP_CHILD_LOCK),
+                ): TextSelector(),
+                vol.Optional(
+                    CONF_DP_PRESET,
+                    default=_dp_default(CONF_DP_PRESET, DEFAULT_DP_PRESET),
+                ): TextSelector(),
+                vol.Optional(
+                    CONF_DP_POWER_W,
+                    default=_dp_default(CONF_DP_POWER_W, DEFAULT_DP_POWER_W),
+                ): TextSelector(),
+                vol.Optional(
+                    CONF_DP_ENERGY,
+                    default=_dp_default(CONF_DP_ENERGY, DEFAULT_DP_ENERGY),
                 ): TextSelector(),
                 vol.Required(
                     CONF_MIN_TEMP,

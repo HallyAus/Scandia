@@ -18,7 +18,9 @@ from .const import (
     CONF_DP_CURRENT_TEMP,
     CONF_DP_HEAT,
     CONF_DP_POWER,
+    CONF_DP_PRESET,
     CONF_DP_TARGET_TEMP,
+    DEFAULT_PRESET_MODES,
 )
 from .entity import ScandiaEntity
 from .helpers import get_dp, get_temp_range
@@ -49,6 +51,7 @@ class ScandiaClimate(ScandiaEntity, ClimateEntity):
         self._dp_heat = get_dp(entry, CONF_DP_HEAT)
         self._dp_target = get_dp(entry, CONF_DP_TARGET_TEMP)
         self._dp_current = get_dp(entry, CONF_DP_CURRENT_TEMP)
+        self._dp_preset = get_dp(entry, CONF_DP_PRESET)
         self._attr_unique_id = f"{entry.data['device_id']}_climate"
         self._attr_min_temp, self._attr_max_temp = get_temp_range(entry)
 
@@ -61,6 +64,15 @@ class ScandiaClimate(ScandiaEntity, ClimateEntity):
         features = ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
         if self._dp_target is not None:
             features |= ClimateEntityFeature.TARGET_TEMPERATURE
+
+        # Presets are only offered if the device actually reports the DP, so a
+        # mis-guessed DP number never produces a broken control.
+        if self._dp_preset is not None and self._dp_present(self._dp_preset):
+            features |= ClimateEntityFeature.PRESET_MODE
+            self._attr_preset_modes = list(DEFAULT_PRESET_MODES)
+        else:
+            self._dp_preset = None
+
         self._attr_supported_features = features
 
     @property
@@ -94,6 +106,17 @@ class ScandiaClimate(ScandiaEntity, ClimateEntity):
         """Return the target temperature."""
         value = self._dp_value(self._dp_target)
         return float(value) if value is not None else None
+
+    @property
+    def preset_mode(self) -> str | None:
+        """Return the current heat preset."""
+        value = self._dp_value(self._dp_preset)
+        return str(value) if value is not None else None
+
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        """Set the heat preset."""
+        if self._dp_preset is not None:
+            await self.coordinator.async_set_dp(self._dp_preset, preset_mode)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Turn power on/off and toggle the heating element."""

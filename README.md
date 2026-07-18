@@ -22,14 +22,23 @@ Depending on what your fireplace firmware exposes, you get:
 
 | Entity | Platform | What it controls |
 | --- | --- | --- |
-| Fireplace | `climate` | Power on/off, heat vs. flame-only mode, target & current temperature |
+| Fireplace | `climate` | Power on/off, heat vs. flame-only mode, target & current temperature, heat presets |
 | Flame | `light` | Flame on/off, brightness, colour/effect |
 | Flame speed | `select` | Flame animation speed |
 | Auto-off timer | `number` | Countdown auto-off timer (hours) |
 | Child lock | `switch` | Engage/release the child lock |
+| Current temperature | `sensor` | Room temperature (for history & automations) |
+| Power / Energy | `sensor` | Live power (W) and cumulative energy (kWh), if your unit reports them |
 
 Entities are created only when the matching data point is configured, so you
-won't see controls your unit doesn't support.
+won't see controls your unit doesn't support. Heat presets and the power/energy
+sensors are **opt-in** — their DP numbers vary too much between models to guess
+safely, so enable them under **Configure** once you've identified them from the
+diagnostics (see [Data points](#data-points-advanced)).
+
+The fireplace's IP is also **tracked automatically**: if you've enabled DHCP
+discovery in Home Assistant, a changed IP is picked up and updated on its own
+(the device is matched by MAC address).
 
 ## Installation (HACS)
 
@@ -136,6 +145,9 @@ If some controls are missing or behave oddly:
 | Flame speed | `103` |
 | Countdown timer | `106` |
 | Child lock | `108` |
+| Heat preset (opt-in) | _unset_ |
+| Power sensor, W (opt-in) | _unset_ |
+| Energy sensor, kWh (opt-in) | _unset_ |
 
 ## Troubleshooting
 
