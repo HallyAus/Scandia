@@ -1,8 +1,8 @@
 """Diagnostics support for the Scandia Fireplace integration.
 
-Downloading diagnostics reveals every raw data point (DP) the fireplace is
-currently reporting, which is the easiest way to discover your unit's DP
-mapping and correct it from the integration options if the defaults are wrong.
+Downloading diagnostics reveals every function code the fireplace currently
+reports, which is the easiest way to discover your unit's code mapping and
+correct it from the integration options if the defaults are wrong.
 """
 
 from __future__ import annotations
@@ -14,12 +14,7 @@ from homeassistant.core import HomeAssistant
 
 from . import ScandiaConfigEntry
 
-TO_REDACT = {
-    "local_key",
-    "device_id",
-    "cloud_api_key",
-    "cloud_api_secret",
-}
+TO_REDACT = {"token_info", "terminal_id", "user_code", "uid"}
 
 
 async def async_get_config_entry_diagnostics(
@@ -27,8 +22,16 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
     coordinator = entry.runtime_data
+    device = coordinator.device
     return {
         "config": async_redact_data(dict(entry.data), TO_REDACT),
         "options": dict(entry.options),
-        "raw_data_points": coordinator.data or {},
+        "device": {
+            "category": getattr(device, "category", None),
+            "product_name": getattr(device, "product_name", None),
+            "online": getattr(device, "online", None),
+        }
+        if device
+        else None,
+        "status_codes": coordinator.data or {},
     }

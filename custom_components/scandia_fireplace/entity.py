@@ -5,10 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.helpers.device_info import DeviceInfo
-from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, format_mac
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_DEVICE_ID, CONF_MAC, CONF_MODEL, DOMAIN
+from .const import CONF_MODEL, DOMAIN
 from .coordinator import ScandiaCoordinator
 
 
@@ -20,18 +19,12 @@ class ScandiaEntity(CoordinatorEntity[ScandiaCoordinator]):
     def __init__(self, coordinator: ScandiaCoordinator) -> None:
         """Initialise the entity with shared device info."""
         super().__init__(coordinator)
-        device_id = coordinator.entry.data[CONF_DEVICE_ID]
-        model = coordinator.entry.data.get(CONF_MODEL) or "Aurora Electric Fire"
-
-        # A MAC (when known) lets Home Assistant track the device across IP
-        # changes via DHCP discovery.
-        connections = set()
-        if mac := coordinator.entry.data.get(CONF_MAC):
-            connections.add((CONNECTION_NETWORK_MAC, format_mac(mac)))
-
+        device = coordinator.device
+        model = coordinator.entry.data.get(CONF_MODEL) or (
+            device.product_name if device else "Aurora Electric Fire"
+        )
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, device_id)},
-            connections=connections,
+            identifiers={(DOMAIN, coordinator.device_id)},
             name=coordinator.entry.title,
             manufacturer="Scandia",
             model=model,
@@ -39,15 +32,21 @@ class ScandiaEntity(CoordinatorEntity[ScandiaCoordinator]):
 
     @property
     def available(self) -> bool:
-        """Return True when the last poll succeeded."""
-        return super().available and self.coordinator.data is not None
+        """Return True when polling works and the device is online."""
+        device = self.coordinator.device
+        online = device.online if device else False
+        return super().available and self.coordinator.data is not None and online
 
-    def _dp_value(self, dp: str | None) -> Any:
-        """Return the current value of a data point, or None if absent."""
-        if dp is None or self.coordinator.data is None:
+    def _code_value(self, code: str | None) -> Any:
+        """Return the current value of a function code, or None if absent."""
+        if code is None or self.coordinator.data is None:
             return None
-        return self.coordinator.data.get(dp)
+        return self.coordinator.data.get(code)
 
-    def _dp_present(self, dp: str | None) -> bool:
-        """Return True if the device currently reports this data point."""
-        return dp is not None and self.coordinator.data is not None and dp in self.coordinator.data
+    def _code_present(self, code: str | None) -> bool:
+        """Return True if the device currently reports this function code."""
+        return (
+            code is not None
+            and self.coordinator.data is not None
+            and code in self.coordinator.data
+        )

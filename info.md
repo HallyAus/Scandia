@@ -1,20 +1,20 @@
 # Scandia Fireplace
 
-Local (no-cloud) Home Assistant control for **Scandia Aurora electric
-fireplaces** (36" / 50" / 74"), which are Tuya-based devices.
+Home Assistant control for **Scandia Aurora electric fireplaces** (36" / 50" /
+74"), which are Tuya-based devices.
 
-Talks directly to the fireplace over your LAN using the local Tuya protocol,
-exposing:
+**Simple sign-in — no developer account, no keys.** You log in the same way as
+Home Assistant's official Tuya integration: enter a **user code** from the Smart
+Life app and scan a **QR code**. The integration then controls the fireplace
+through the Tuya cloud, but with proper fireplace-specific entities:
 
-- **Climate** — power, heat / flame-only mode, target & current temperature
+- **Climate** — power, heat / flame-only mode, target & current temperature, presets
 - **Light** — flame on/off, brightness and colour effect
 - **Select** — flame animation speed
 - **Number** — auto-off countdown timer
 - **Switch** — child lock
+- **Sensor** — current temperature, plus optional power (W) & energy (kWh)
 
-Setup is **cloud-assisted but runs locally**: you enter your Tuya IoT project
-credentials once, the integration auto-fetches the fireplace's local key from
-the Tuya cloud (and re-fetches it automatically if it ever changes), then
-controls the fireplace over your LAN. You only supply the device's **IP
-address**. Data-point mappings are editable from the integration options if your
-firmware differs.
+Function-code mappings are editable from the integration options if your
+firmware differs, and a diagnostics download lists the codes your device
+reports.

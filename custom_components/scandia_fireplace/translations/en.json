@@ -2,44 +2,32 @@
   "config": {
     "step": {
       "user": {
-        "title": "Tuya cloud credentials",
-        "description": "Setup uses the Tuya cloud once to fetch your fireplace's local key; control then runs locally over your network. Enter your Tuya IoT project details. The Device ID is any device from your account (used to look up the project) — you'll pick the fireplace next. See the README for how to create the IoT project.",
+        "title": "Sign in to Tuya / Smart Life",
+        "description": "Enter the **user code** from your Smart Life (or Tuya Smart) app. Find it in the app under **Me → ⚙ (Settings) → Account and Security → User Code**. No developer account is needed.",
         "data": {
-          "cloud_region": "Data centre / region",
-          "cloud_api_key": "Access ID / Client ID",
-          "cloud_api_secret": "Access Secret / Client Secret",
-          "device_id": "Sample Device ID"
+          "user_code": "User code"
         }
+      },
+      "scan": {
+        "title": "Scan to link your account",
+        "description": "Open the **Smart Life** app, tap **＋ (top right) → Scan**, and scan this QR code. Then press **Submit** below to finish."
       },
       "select_device": {
         "title": "Select your fireplace",
-        "description": "Found {discovered} Tuya device(s) on your network. Choose the fireplace — its local key is fetched from the cloud and its IP is auto-detected from the LAN where possible. If the IP field is blank, enter it manually (from your router's device list); reserve it so it doesn't change.",
+        "description": "Choose the fireplace from the devices on your account.",
         "data": {
-          "device_id": "Fireplace",
-          "host": "IP address (auto-detected)",
-          "protocol_version": "Tuya protocol version"
-        }
-      },
-      "reconfigure": {
-        "title": "Update fireplace connection",
-        "description": "Update the fireplace's IP address or protocol version — useful if its IP changed. The IP is re-detected from the LAN where possible. Your cloud credentials and local key are kept.",
-        "data": {
-          "host": "IP address",
-          "protocol_version": "Tuya protocol version"
+          "device_id": "Fireplace"
         }
       }
     },
     "error": {
-      "cloud_error": "Could not reach the Tuya cloud. Check the region, Access ID and Access Secret, and that your IoT project has the Smart Home data source and a linked app account.",
-      "no_devices": "No devices were found on this Tuya account. Make sure your app account is linked to the IoT project.",
-      "no_local_key": "The Tuya cloud did not return a local key for this device. Try again in a few minutes, or check the IoT project linkage.",
-      "no_ip": "The fireplace's IP address couldn't be auto-detected. Enter it manually — find it in your router's device list.",
-      "cannot_connect": "Could not reach the fireplace locally. Check the IP address and protocol version, ensure Home Assistant is on the same network, and fully close the Tuya app while testing."
+      "login_error": "Login failed. Check the user code, make sure you scanned the QR code with the Smart Life app, and try again.",
+      "temp_range": "The minimum temperature must be lower than the maximum temperature."
     },
     "abort": {
       "already_configured": "This fireplace is already configured.",
-      "reconfigure_successful": "The fireplace connection was updated.",
-      "not_scandia": "This device is not a configured Scandia fireplace."
+      "no_devices": "No devices were found on this account. Add the fireplace to the Smart Life app first.",
+      "reauth_successful": "Successfully re-authenticated."
     }
   },
   "options": {
@@ -48,24 +36,23 @@
     },
     "step": {
       "init": {
-        "title": "Scandia fireplace data points",
-        "description": "Map the Tuya data point (DP) IDs to fireplace functions. Leave an optional field blank to disable that feature. Download the integration's diagnostics to see the raw DP IDs your device reports.",
+        "title": "Scandia fireplace function codes",
+        "description": "Map the Tuya function codes to fireplace functions. Leave an optional field blank to disable that feature. Download the integration's diagnostics to see the codes your device actually reports.",
         "data": {
-          "dp_power": "Power / flame on-off DP",
-          "dp_heat": "Heating element DP",
-          "dp_target_temp": "Target temperature DP",
-          "dp_current_temp": "Current temperature DP",
-          "dp_flame_brightness": "Flame brightness DP",
-          "dp_flame_effect": "Flame effect / colour DP",
-          "dp_flame_speed": "Flame speed DP",
-          "dp_timer": "Countdown timer DP",
-          "dp_child_lock": "Child lock DP",
-          "dp_preset": "Heat preset DP (eco/comfort/boost)",
-          "dp_power_w": "Power sensor DP (watts)",
-          "dp_energy": "Energy sensor DP (kWh)",
+          "code_power": "Power / flame on-off code",
+          "code_heat": "Heating element code",
+          "code_target_temp": "Target temperature code",
+          "code_current_temp": "Current temperature code",
+          "code_flame_brightness": "Flame brightness code",
+          "code_flame_effect": "Flame effect / colour code",
+          "code_flame_speed": "Flame speed code",
+          "code_timer": "Countdown timer code",
+          "code_child_lock": "Child lock code",
+          "code_preset": "Heat preset code (eco/comfort/boost)",
+          "code_power_w": "Power sensor code (watts)",
+          "code_energy": "Energy sensor code (kWh)",
           "min_temp": "Minimum target temperature (°C)",
-          "max_temp": "Maximum target temperature (°C)",
-          "scan_interval": "Polling interval (seconds)"
+          "max_temp": "Maximum target temperature (°C)"
         }
       }
     }

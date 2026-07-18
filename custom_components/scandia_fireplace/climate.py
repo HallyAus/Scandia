@@ -15,15 +15,15 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import ScandiaConfigEntry
 from .const import (
-    CONF_DP_CURRENT_TEMP,
-    CONF_DP_HEAT,
-    CONF_DP_POWER,
-    CONF_DP_PRESET,
-    CONF_DP_TARGET_TEMP,
+    CONF_CODE_CURRENT_TEMP,
+    CONF_CODE_HEAT,
+    CONF_CODE_POWER,
+    CONF_CODE_PRESET,
+    CONF_CODE_TARGET_TEMP,
     DEFAULT_PRESET_MODES,
 )
 from .entity import ScandiaEntity
-from .helpers import get_dp, get_temp_range
+from .helpers import get_code, get_temp_range
 
 
 async def async_setup_entry(
@@ -36,98 +36,92 @@ async def async_setup_entry(
 
 
 class ScandiaClimate(ScandiaEntity, ClimateEntity):
-    """Represent the fireplace as a heater with an optional fan-only (flame) mode."""
+    """Represent the fireplace as a heater with an optional flame-only mode."""
 
-    _attr_name = None  # primary entity uses the device name
+    _attr_name = None
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_target_temperature_step = 1.0
     _enable_turn_on_off_backwards_compatibility = False
 
     def __init__(self, coordinator, entry: ScandiaConfigEntry) -> None:
-        """Cache the DP mapping for this entity."""
+        """Cache the code mapping for this entity."""
         super().__init__(coordinator)
-        self._entry = entry
-        self._dp_power = get_dp(entry, CONF_DP_POWER)
-        self._dp_heat = get_dp(entry, CONF_DP_HEAT)
-        self._dp_target = get_dp(entry, CONF_DP_TARGET_TEMP)
-        self._dp_current = get_dp(entry, CONF_DP_CURRENT_TEMP)
-        self._dp_preset = get_dp(entry, CONF_DP_PRESET)
-        self._attr_unique_id = f"{entry.data['device_id']}_climate"
+        self._code_power = get_code(entry, CONF_CODE_POWER)
+        self._code_heat = get_code(entry, CONF_CODE_HEAT)
+        self._code_target = get_code(entry, CONF_CODE_TARGET_TEMP)
+        self._code_current = get_code(entry, CONF_CODE_CURRENT_TEMP)
+        self._code_preset = get_code(entry, CONF_CODE_PRESET)
+        self._attr_unique_id = f"{coordinator.device_id}_climate"
         self._attr_min_temp, self._attr_max_temp = get_temp_range(entry)
 
-        # A dedicated heat DP means we can offer a flame-only (fan_only) mode.
-        if self._dp_heat is not None:
+        if self._code_heat is not None:
             self._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.FAN_ONLY]
         else:
             self._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
 
         features = ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
-        if self._dp_target is not None:
+        if self._code_target is not None:
             features |= ClimateEntityFeature.TARGET_TEMPERATURE
 
-        # Presets are only offered if the device actually reports the DP, so a
-        # mis-guessed DP number never produces a broken control.
-        if self._dp_preset is not None and self._dp_present(self._dp_preset):
+        if self._code_preset is not None and self._code_present(self._code_preset):
             features |= ClimateEntityFeature.PRESET_MODE
             self._attr_preset_modes = list(DEFAULT_PRESET_MODES)
         else:
-            self._dp_preset = None
+            self._code_preset = None
 
         self._attr_supported_features = features
 
     @property
     def _is_on(self) -> bool:
-        return bool(self._dp_value(self._dp_power))
+        return bool(self._code_value(self._code_power))
 
     @property
     def _heat_enabled(self) -> bool:
-        """Whether the heating element is active. Defaults to on when no heat DP."""
-        if self._dp_heat is None:
+        if self._code_heat is None:
             return True
-        return bool(self._dp_value(self._dp_heat))
+        return bool(self._code_value(self._code_heat))
 
     @property
     def hvac_mode(self) -> HVACMode:
         """Return the current operating mode."""
         if not self._is_on:
             return HVACMode.OFF
-        if self._dp_heat is not None and not self._heat_enabled:
+        if self._code_heat is not None and not self._heat_enabled:
             return HVACMode.FAN_ONLY
         return HVACMode.HEAT
 
     @property
     def current_temperature(self) -> float | None:
         """Return the measured room temperature."""
-        value = self._dp_value(self._dp_current)
+        value = self._code_value(self._code_current)
         return float(value) if value is not None else None
 
     @property
     def target_temperature(self) -> float | None:
         """Return the target temperature."""
-        value = self._dp_value(self._dp_target)
+        value = self._code_value(self._code_target)
         return float(value) if value is not None else None
 
     @property
     def preset_mode(self) -> str | None:
         """Return the current heat preset."""
-        value = self._dp_value(self._dp_preset)
+        value = self._code_value(self._code_preset)
         return str(value) if value is not None else None
-
-    async def async_set_preset_mode(self, preset_mode: str) -> None:
-        """Set the heat preset."""
-        if self._dp_preset is not None:
-            await self.coordinator.async_set_dp(self._dp_preset, preset_mode)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Turn power on/off and toggle the heating element."""
         if hvac_mode == HVACMode.OFF:
-            await self.coordinator.async_set_dp(self._dp_power, False)
+            await self.coordinator.async_send(
+                [{"code": self._code_power, "value": False}]
+            )
             return
 
-        updates: dict[str, Any] = {self._dp_power: True}
-        if self._dp_heat is not None:
-            updates[self._dp_heat] = hvac_mode == HVACMode.HEAT
-        await self.coordinator.async_set_multiple(updates)
+        commands: list[dict[str, Any]] = [{"code": self._code_power, "value": True}]
+        if self._code_heat is not None:
+            commands.append(
+                {"code": self._code_heat, "value": hvac_mode == HVACMode.HEAT}
+            )
+        await self.coordinator.async_send(commands)
 
     async def async_turn_on(self) -> None:
         """Turn the fireplace on (heat mode)."""
@@ -135,13 +129,23 @@ class ScandiaClimate(ScandiaEntity, ClimateEntity):
 
     async def async_turn_off(self) -> None:
         """Turn the fireplace off."""
-        await self.coordinator.async_set_dp(self._dp_power, False)
+        await self.coordinator.async_send([{"code": self._code_power, "value": False}])
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set a new target temperature."""
-        if (temperature := kwargs.get(ATTR_TEMPERATURE)) is None or self._dp_target is None:
+        temperature = kwargs.get(ATTR_TEMPERATURE)
+        if temperature is None or self._code_target is None:
             return
-        await self.coordinator.async_set_dp(self._dp_target, int(round(temperature)))
+        await self.coordinator.async_send(
+            [{"code": self._code_target, "value": int(round(temperature))}]
+        )
+
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        """Set the heat preset."""
+        if self._code_preset is not None:
+            await self.coordinator.async_send(
+                [{"code": self._code_preset, "value": preset_mode}]
+            )
 
     @callback
     def _handle_coordinator_update(self) -> None:

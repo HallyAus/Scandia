@@ -1,9 +1,8 @@
 """Config and options flow for the Scandia Fireplace integration.
 
-Setup is cloud-assisted but the running integration is local: the user supplies
-their Tuya IoT project credentials once, the flow pulls the device's local key
-from the Tuya cloud, auto-detects its IP and protocol version from the LAN
-broadcast, and the fireplace is then controlled directly over the LAN.
+Login mirrors Home Assistant's official Tuya integration: the user enters a
+"user code" from the Smart Life app and scans a QR code — no developer/IoT
+project required. Control then happens through the Tuya cloud.
 """
 
 from __future__ import annotations
@@ -12,6 +11,7 @@ import logging
 from typing import Any
 
 import voluptuous as vol
+from tuya_sharing import LoginControl
 
 from homeassistant.config_entries import (
     ConfigEntry,
@@ -20,8 +20,7 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import callback
-from homeassistant.helpers.device_registry import format_mac
-from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
+from homeassistant.helpers import selector
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
@@ -33,322 +32,234 @@ from homeassistant.helpers.selector import (
     TextSelector,
 )
 
-from .cloud import CloudError, TuyaCloud
 from .const import (
-    CLOUD_REGIONS,
-    CONF_CLOUD_API_KEY,
-    CONF_CLOUD_API_SECRET,
-    CONF_CLOUD_REGION,
+    CONF_CODE_CHILD_LOCK,
+    CONF_CODE_CURRENT_TEMP,
+    CONF_CODE_ENERGY,
+    CONF_CODE_FLAME_BRIGHTNESS,
+    CONF_CODE_FLAME_EFFECT,
+    CONF_CODE_FLAME_SPEED,
+    CONF_CODE_HEAT,
+    CONF_CODE_POWER,
+    CONF_CODE_POWER_W,
+    CONF_CODE_PRESET,
+    CONF_CODE_TARGET_TEMP,
+    CONF_CODE_TIMER,
     CONF_DEVICE_ID,
-    CONF_DP_CHILD_LOCK,
-    CONF_DP_CURRENT_TEMP,
-    CONF_DP_ENERGY,
-    CONF_DP_FLAME_BRIGHTNESS,
-    CONF_DP_FLAME_EFFECT,
-    CONF_DP_FLAME_SPEED,
-    CONF_DP_HEAT,
-    CONF_DP_POWER,
-    CONF_DP_POWER_W,
-    CONF_DP_PRESET,
-    CONF_DP_TARGET_TEMP,
-    CONF_DP_TIMER,
-    CONF_HOST,
-    CONF_LOCAL_KEY,
-    CONF_MAC,
+    CONF_ENDPOINT,
     CONF_MAX_TEMP,
     CONF_MIN_TEMP,
     CONF_MODEL,
-    CONF_PROTOCOL_VERSION,
-    CONF_SCAN_INTERVAL,
-    DEFAULT_CLOUD_REGION,
-    DEFAULT_DP_CHILD_LOCK,
-    DEFAULT_DP_CURRENT_TEMP,
-    DEFAULT_DP_ENERGY,
-    DEFAULT_DP_FLAME_BRIGHTNESS,
-    DEFAULT_DP_FLAME_EFFECT,
-    DEFAULT_DP_FLAME_SPEED,
-    DEFAULT_DP_HEAT,
-    DEFAULT_DP_POWER,
-    DEFAULT_DP_POWER_W,
-    DEFAULT_DP_PRESET,
-    DEFAULT_DP_TARGET_TEMP,
-    DEFAULT_DP_TIMER,
+    CONF_TERMINAL_ID,
+    CONF_TOKEN_INFO,
+    CONF_USER_CODE,
+    DEFAULT_CODE_CHILD_LOCK,
+    DEFAULT_CODE_CURRENT_TEMP,
+    DEFAULT_CODE_ENERGY,
+    DEFAULT_CODE_FLAME_BRIGHTNESS,
+    DEFAULT_CODE_FLAME_EFFECT,
+    DEFAULT_CODE_FLAME_SPEED,
+    DEFAULT_CODE_HEAT,
+    DEFAULT_CODE_POWER,
+    DEFAULT_CODE_POWER_W,
+    DEFAULT_CODE_PRESET,
+    DEFAULT_CODE_TARGET_TEMP,
+    DEFAULT_CODE_TIMER,
     DEFAULT_MAX_TEMP,
     DEFAULT_MIN_TEMP,
-    DEFAULT_PROTOCOL_VERSION,
-    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    PROTOCOL_VERSIONS,
+    TUYA_CLIENT_ID,
+    TUYA_RESPONSE_QR_CODE,
+    TUYA_RESPONSE_RESULT,
+    TUYA_RESPONSE_SUCCESS,
+    TUYA_SCHEMA,
 )
-from .coordinator import test_local_connection
-from .discovery import scan_lan
+from .coordinator import TokenListener, build_manager
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _normalise_version(raw: Any) -> str:
-    """Coerce a cloud-reported protocol version to a supported string."""
-    version = str(raw).strip() if raw is not None else ""
-    return version if version in PROTOCOL_VERSIONS else DEFAULT_PROTOCOL_VERSION
-
-
 class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Cloud-assisted setup for a Scandia fireplace."""
+    """QR-code (user-code) login for a Scandia fireplace."""
 
     VERSION = 1
 
     def __init__(self) -> None:
-        """Hold state between the credential and device-selection steps."""
-        self._cloud_creds: dict[str, str] = {}
-        self._devices: list[dict[str, Any]] = []
-        self._discovered: dict[str, dict[str, str]] = {}
-        self._scanned = False
+        """Hold state across the login steps."""
+        self._login_control = LoginControl()
+        self._user_code: str = ""
+        self._qr_code: str = ""
+        self._token_data: dict[str, Any] = {}
+        self._devices: list[Any] = []
+        self._reauth_entry: ConfigEntry | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Collect Tuya IoT credentials and list the account's devices."""
+        """Ask for the Smart Life user code and request a login QR code."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            region = user_input[CONF_CLOUD_REGION]
-            api_key = user_input[CONF_CLOUD_API_KEY].strip()
-            api_secret = user_input[CONF_CLOUD_API_SECRET].strip()
-            sample_id = user_input[CONF_DEVICE_ID].strip()
+            self._user_code = user_input[CONF_USER_CODE].strip()
+            response = await self.hass.async_add_executor_job(
+                self._login_control.qr_code,
+                TUYA_CLIENT_ID,
+                TUYA_SCHEMA,
+                self._user_code,
+            )
+            if response.get(TUYA_RESPONSE_SUCCESS):
+                self._qr_code = response[TUYA_RESPONSE_RESULT][TUYA_RESPONSE_QR_CODE]
+                return await self.async_step_scan()
+            errors["base"] = "login_error"
 
-            try:
-                cloud = await self.hass.async_add_executor_job(
-                    TuyaCloud, region, api_key, api_secret, sample_id
-                )
-                devices = await self.hass.async_add_executor_job(cloud.list_devices)
-            except CloudError as err:
-                _LOGGER.warning("Tuya cloud error: %s", err)
-                errors["base"] = "cloud_error"
-            except Exception as err:  # noqa: BLE001 - map any failure to a form error
-                _LOGGER.warning("Unexpected cloud error: %s", err)
-                errors["base"] = "cloud_error"
-            else:
-                if not devices:
-                    errors["base"] = "no_devices"
-                else:
-                    self._cloud_creds = {
-                        CONF_CLOUD_REGION: region,
-                        CONF_CLOUD_API_KEY: api_key,
-                        CONF_CLOUD_API_SECRET: api_secret,
-                    }
-                    self._devices = devices
-                    return await self.async_step_select_device()
+        default_user_code = self._user_code
+        if self._reauth_entry is not None:
+            default_user_code = self._reauth_entry.data.get(CONF_USER_CODE, "")
 
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_CLOUD_REGION, default=DEFAULT_CLOUD_REGION
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=CLOUD_REGIONS, mode=SelectSelectorMode.DROPDOWN
-                    )
-                ),
-                vol.Required(CONF_CLOUD_API_KEY): TextSelector(),
-                vol.Required(CONF_CLOUD_API_SECRET): TextSelector(),
-                vol.Required(CONF_DEVICE_ID): TextSelector(),
-            }
-        )
         return self.async_show_form(
-            step_id="user", data_schema=schema, errors=errors
+            step_id="user",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_USER_CODE, default=default_user_code
+                    ): TextSelector()
+                }
+            ),
+            errors=errors,
         )
+
+    async def async_step_scan(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the QR code and wait for the user to scan and confirm."""
+        if user_input is None:
+            return self.async_show_form(
+                step_id="scan",
+                data_schema=vol.Schema(
+                    {
+                        vol.Optional("QR"): selector.QrCodeSelector(
+                            config=selector.QrCodeSelectorConfig(
+                                data=f"tuyaSmart--qrLogin?token={self._qr_code}",
+                                scale=5,
+                                error_correction_level=(
+                                    selector.QrErrorCorrectionLevel.QUARTILE
+                                ),
+                            )
+                        )
+                    }
+                ),
+            )
+
+        ret, info = await self.hass.async_add_executor_job(
+            self._login_control.login_result,
+            self._qr_code,
+            TUYA_CLIENT_ID,
+            self._user_code,
+        )
+        if not ret:
+            return self.async_show_form(
+                step_id="scan",
+                errors={"base": "login_error"},
+                data_schema=vol.Schema(
+                    {
+                        vol.Optional("QR"): selector.QrCodeSelector(
+                            config=selector.QrCodeSelectorConfig(
+                                data=f"tuyaSmart--qrLogin?token={self._qr_code}",
+                                scale=5,
+                                error_correction_level=(
+                                    selector.QrErrorCorrectionLevel.QUARTILE
+                                ),
+                            )
+                        )
+                    }
+                ),
+            )
+
+        self._token_data = {
+            CONF_USER_CODE: self._user_code,
+            CONF_TOKEN_INFO: {
+                "t": info["t"],
+                "uid": info["uid"],
+                "expire_time": info["expire_time"],
+                "access_token": info["access_token"],
+                "refresh_token": info["refresh_token"],
+            },
+            CONF_TERMINAL_ID: info[CONF_TERMINAL_ID],
+            CONF_ENDPOINT: info[CONF_ENDPOINT],
+        }
+
+        if self._reauth_entry is not None:
+            return self.async_update_reload_and_abort(
+                self._reauth_entry,
+                data={**self._reauth_entry.data, **self._token_data},
+            )
+
+        return await self.async_step_select_device()
 
     async def async_step_select_device(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Pick the fireplace, confirm its IP, and verify local control."""
+        """List the account's devices and let the user pick the fireplace."""
         errors: dict[str, str] = {}
 
-        devices_by_id = {d["id"]: d for d in self._devices if d.get("id")}
+        if not self._devices:
+            entry_stub = _StubEntry(self._token_data)
+            manager = build_manager(
+                entry_stub, TokenListener(self.hass, None)  # type: ignore[arg-type]
+            )
+            try:
+                await self.hass.async_add_executor_job(manager.update_device_cache)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Could not list Tuya devices: %s", err)
+                return self.async_abort(reason="no_devices")
+            self._devices = list(manager.device_map.values())
 
-        # Best-effort LAN scan (once) so we can auto-fill the fireplace's IP.
-        if not self._scanned:
-            self._discovered = await self.hass.async_add_executor_job(scan_lan)
-            self._scanned = True
+        if not self._devices:
+            return self.async_abort(reason="no_devices")
 
         if user_input is not None:
             device_id = user_input[CONF_DEVICE_ID]
-            device = devices_by_id.get(device_id, {})
-            local_key = device.get("key", "")
-            # Fall back to the auto-discovered IP if the field was left blank.
-            host = user_input.get(CONF_HOST, "").strip() or self._discovered.get(
-                device_id, {}
-            ).get("ip", "")
-            version = user_input[CONF_PROTOCOL_VERSION]
-
+            device = next((d for d in self._devices if d.id == device_id), None)
             await self.async_set_unique_id(device_id)
             self._abort_if_unique_id_configured()
-
-            if not local_key:
-                errors["base"] = "no_local_key"
-            elif not host:
-                errors["base"] = "no_ip"
-            else:
-                try:
-                    await self.hass.async_add_executor_job(
-                        test_local_connection, device_id, host, local_key, version
-                    )
-                except Exception as err:  # noqa: BLE001
-                    _LOGGER.warning("Could not connect locally: %s", err)
-                    errors["base"] = "cannot_connect"
-                else:
-                    return self.async_create_entry(
-                        title=device.get("name") or "Scandia Fireplace",
-                        data={
-                            CONF_MODEL: device.get("name", ""),
-                            CONF_DEVICE_ID: device_id,
-                            CONF_HOST: host,
-                            CONF_LOCAL_KEY: local_key,
-                            CONF_PROTOCOL_VERSION: version,
-                            CONF_MAC: device.get("mac", ""),
-                            **self._cloud_creds,
-                        },
-                    )
+            return self.async_create_entry(
+                title=getattr(device, "name", None) or "Scandia Fireplace",
+                data={
+                    CONF_DEVICE_ID: device_id,
+                    CONF_MODEL: getattr(device, "product_name", ""),
+                    **self._token_data,
+                },
+            )
 
         options = [
             SelectOptionDict(
-                value=d["id"], label=f"{d.get('name', 'Device')} ({d['id']})"
+                value=d.id,
+                label=f"{getattr(d, 'name', 'Device')} ({getattr(d, 'category', '')})",
             )
             for d in self._devices
-            if d.get("id")
         ]
-
-        # Pre-fill the IP and protocol version from the first/selected device.
-        # The LAN broadcast reports the authoritative protocol version; the
-        # cloud does not, so prefer the discovered value and fall back to 3.3.
-        selected = user_input.get(CONF_DEVICE_ID) if user_input else None
-        default_device = (
-            devices_by_id.get(selected) if selected else self._devices[0]
-        ) or self._devices[0]
-        discovered = self._discovered.get(default_device.get("id", ""), {})
-        default_version = _normalise_version(
-            discovered.get("version") or default_device.get("version")
-        )
-        default_host = (
-            user_input.get(CONF_HOST) if user_input else None
-        ) or discovered.get("ip", "")
-
-        host_field = (
-            vol.Required(CONF_HOST, default=default_host)
-            if default_host
-            else vol.Optional(CONF_HOST, default="")
-        )
-
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_DEVICE_ID, default=default_device.get("id")
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=options, mode=SelectSelectorMode.DROPDOWN
-                    )
-                ),
-                host_field: TextSelector(),
-                vol.Required(
-                    CONF_PROTOCOL_VERSION, default=default_version
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=PROTOCOL_VERSIONS, mode=SelectSelectorMode.DROPDOWN
-                    )
-                ),
-            }
-        )
         return self.async_show_form(
             step_id="select_device",
-            data_schema=schema,
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_DEVICE_ID): SelectSelector(
+                        SelectSelectorConfig(
+                            options=options, mode=SelectSelectorMode.DROPDOWN
+                        )
+                    )
+                }
+            ),
             errors=errors,
-            description_placeholders={
-                "discovered": str(len(self._discovered)),
-            },
         )
 
-    async def async_step_dhcp(
-        self, discovery_info: DhcpServiceInfo
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
     ) -> ConfigFlowResult:
-        """Track a known fireplace's IP address as it changes on the network.
-
-        With ``registered_devices`` set in the manifest, this only fires for
-        devices already in the registry (matched by MAC), so we simply keep the
-        stored IP in sync — no new setup is triggered here.
-        """
-        mac = format_mac(discovery_info.macaddress)
-        for entry in self._async_current_entries(include_ignore=False):
-            entry_mac = entry.data.get(CONF_MAC)
-            if entry_mac and format_mac(entry_mac) == mac:
-                if entry.data.get(CONF_HOST) != discovery_info.ip:
-                    _LOGGER.debug(
-                        "Updating %s IP to %s via DHCP", entry.title, discovery_info.ip
-                    )
-                    self.hass.config_entries.async_update_entry(
-                        entry, data={**entry.data, CONF_HOST: discovery_info.ip}
-                    )
-                    self.hass.config_entries.async_schedule_reload(entry.entry_id)
-                return self.async_abort(reason="already_configured")
-        return self.async_abort(reason="not_scandia")
-
-    async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Update the fireplace's IP address / protocol version in place."""
-        entry = self._get_reconfigure_entry()
-        device_id = entry.data[CONF_DEVICE_ID]
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            host = user_input[CONF_HOST].strip()
-            version = user_input[CONF_PROTOCOL_VERSION]
-            try:
-                await self.hass.async_add_executor_job(
-                    test_local_connection,
-                    device_id,
-                    host,
-                    entry.data[CONF_LOCAL_KEY],
-                    version,
-                )
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.warning("Could not connect locally: %s", err)
-                errors["base"] = "cannot_connect"
-            else:
-                return self.async_update_reload_and_abort(
-                    entry,
-                    data_updates={CONF_HOST: host, CONF_PROTOCOL_VERSION: version},
-                )
-
-        if not self._scanned:
-            self._discovered = await self.hass.async_add_executor_job(scan_lan)
-            self._scanned = True
-        discovered = self._discovered.get(device_id, {})
-
-        default_host = (
-            (user_input or {}).get(CONF_HOST)
-            or discovered.get("ip")
-            or entry.data.get(CONF_HOST, "")
+        """Re-authenticate when the stored token can no longer be refreshed."""
+        self._reauth_entry = self.hass.config_entries.async_get_entry(
+            self.context["entry_id"]
         )
-        default_version = _normalise_version(
-            (user_input or {}).get(CONF_PROTOCOL_VERSION)
-            or discovered.get("version")
-            or entry.data.get(CONF_PROTOCOL_VERSION)
-        )
-
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_HOST, default=default_host): TextSelector(),
-                vol.Required(
-                    CONF_PROTOCOL_VERSION, default=default_version
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=PROTOCOL_VERSIONS, mode=SelectSelectorMode.DROPDOWN
-                    )
-                ),
-            }
-        )
-        return self.async_show_form(
-            step_id="reconfigure", data_schema=schema, errors=errors
-        )
+        return await self.async_step_user()
 
     @staticmethod
     @callback
@@ -357,13 +268,20 @@ class ScandiaConfigFlow(ConfigFlow, domain=DOMAIN):
         return ScandiaOptionsFlow()
 
 
+class _StubEntry:
+    """Minimal stand-in exposing ``data`` for Manager construction pre-entry."""
+
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.data = data
+
+
 class ScandiaOptionsFlow(OptionsFlow):
-    """Let the user remap data points and tune temperature limits."""
+    """Let the user remap function codes and tune temperature limits."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Manage the DP mapping and temperature options."""
+        """Manage the code mapping and temperature options."""
         errors: dict[str, str] = {}
         if user_input is not None:
             if user_input[CONF_MIN_TEMP] >= user_input[CONF_MAX_TEMP]:
@@ -373,58 +291,58 @@ class ScandiaOptionsFlow(OptionsFlow):
 
         options = {**self.config_entry.options, **(user_input or {})}
 
-        def _dp_default(key: str, fallback: str) -> str:
+        def _code(key: str, fallback: str) -> str:
             return str(options.get(key, fallback))
 
         schema = vol.Schema(
             {
                 vol.Required(
-                    CONF_DP_POWER, default=_dp_default(CONF_DP_POWER, DEFAULT_DP_POWER)
+                    CONF_CODE_POWER, default=_code(CONF_CODE_POWER, DEFAULT_CODE_POWER)
                 ): TextSelector(),
                 vol.Optional(
-                    CONF_DP_HEAT, default=_dp_default(CONF_DP_HEAT, DEFAULT_DP_HEAT)
+                    CONF_CODE_HEAT, default=_code(CONF_CODE_HEAT, DEFAULT_CODE_HEAT)
                 ): TextSelector(),
                 vol.Optional(
-                    CONF_DP_TARGET_TEMP,
-                    default=_dp_default(CONF_DP_TARGET_TEMP, DEFAULT_DP_TARGET_TEMP),
+                    CONF_CODE_TARGET_TEMP,
+                    default=_code(CONF_CODE_TARGET_TEMP, DEFAULT_CODE_TARGET_TEMP),
                 ): TextSelector(),
                 vol.Optional(
-                    CONF_DP_CURRENT_TEMP,
-                    default=_dp_default(CONF_DP_CURRENT_TEMP, DEFAULT_DP_CURRENT_TEMP),
+                    CONF_CODE_CURRENT_TEMP,
+                    default=_code(CONF_CODE_CURRENT_TEMP, DEFAULT_CODE_CURRENT_TEMP),
                 ): TextSelector(),
                 vol.Optional(
-                    CONF_DP_FLAME_BRIGHTNESS,
-                    default=_dp_default(
-                        CONF_DP_FLAME_BRIGHTNESS, DEFAULT_DP_FLAME_BRIGHTNESS
+                    CONF_CODE_FLAME_BRIGHTNESS,
+                    default=_code(
+                        CONF_CODE_FLAME_BRIGHTNESS, DEFAULT_CODE_FLAME_BRIGHTNESS
                     ),
                 ): TextSelector(),
                 vol.Optional(
-                    CONF_DP_FLAME_EFFECT,
-                    default=_dp_default(CONF_DP_FLAME_EFFECT, DEFAULT_DP_FLAME_EFFECT),
+                    CONF_CODE_FLAME_EFFECT,
+                    default=_code(CONF_CODE_FLAME_EFFECT, DEFAULT_CODE_FLAME_EFFECT),
                 ): TextSelector(),
                 vol.Optional(
-                    CONF_DP_FLAME_SPEED,
-                    default=_dp_default(CONF_DP_FLAME_SPEED, DEFAULT_DP_FLAME_SPEED),
+                    CONF_CODE_FLAME_SPEED,
+                    default=_code(CONF_CODE_FLAME_SPEED, DEFAULT_CODE_FLAME_SPEED),
                 ): TextSelector(),
                 vol.Optional(
-                    CONF_DP_TIMER,
-                    default=_dp_default(CONF_DP_TIMER, DEFAULT_DP_TIMER),
+                    CONF_CODE_TIMER,
+                    default=_code(CONF_CODE_TIMER, DEFAULT_CODE_TIMER),
                 ): TextSelector(),
                 vol.Optional(
-                    CONF_DP_CHILD_LOCK,
-                    default=_dp_default(CONF_DP_CHILD_LOCK, DEFAULT_DP_CHILD_LOCK),
+                    CONF_CODE_CHILD_LOCK,
+                    default=_code(CONF_CODE_CHILD_LOCK, DEFAULT_CODE_CHILD_LOCK),
                 ): TextSelector(),
                 vol.Optional(
-                    CONF_DP_PRESET,
-                    default=_dp_default(CONF_DP_PRESET, DEFAULT_DP_PRESET),
+                    CONF_CODE_PRESET,
+                    default=_code(CONF_CODE_PRESET, DEFAULT_CODE_PRESET),
                 ): TextSelector(),
                 vol.Optional(
-                    CONF_DP_POWER_W,
-                    default=_dp_default(CONF_DP_POWER_W, DEFAULT_DP_POWER_W),
+                    CONF_CODE_POWER_W,
+                    default=_code(CONF_CODE_POWER_W, DEFAULT_CODE_POWER_W),
                 ): TextSelector(),
                 vol.Optional(
-                    CONF_DP_ENERGY,
-                    default=_dp_default(CONF_DP_ENERGY, DEFAULT_DP_ENERGY),
+                    CONF_CODE_ENERGY,
+                    default=_code(CONF_CODE_ENERGY, DEFAULT_CODE_ENERGY),
                 ): TextSelector(),
                 vol.Required(
                     CONF_MIN_TEMP,
@@ -440,14 +358,6 @@ class ScandiaOptionsFlow(OptionsFlow):
                 ): NumberSelector(
                     NumberSelectorConfig(
                         min=5, max=40, step=1, mode=NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Required(
-                    CONF_SCAN_INTERVAL,
-                    default=options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=10, max=600, step=5, mode=NumberSelectorMode.BOX
                     )
                 ),
             }

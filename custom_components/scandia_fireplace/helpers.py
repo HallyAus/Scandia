@@ -1,63 +1,63 @@
-"""Shared helpers for resolving the effective DP mapping."""
+"""Shared helpers for resolving the effective function-code mapping."""
 
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
 
 from .const import (
-    CONF_DP_CHILD_LOCK,
-    CONF_DP_CURRENT_TEMP,
-    CONF_DP_ENERGY,
-    CONF_DP_FLAME_BRIGHTNESS,
-    CONF_DP_FLAME_EFFECT,
-    CONF_DP_FLAME_SPEED,
-    CONF_DP_HEAT,
-    CONF_DP_POWER,
-    CONF_DP_POWER_W,
-    CONF_DP_PRESET,
-    CONF_DP_TARGET_TEMP,
-    CONF_DP_TIMER,
+    CONF_CODE_CHILD_LOCK,
+    CONF_CODE_CURRENT_TEMP,
+    CONF_CODE_ENERGY,
+    CONF_CODE_FLAME_BRIGHTNESS,
+    CONF_CODE_FLAME_EFFECT,
+    CONF_CODE_FLAME_SPEED,
+    CONF_CODE_HEAT,
+    CONF_CODE_POWER,
+    CONF_CODE_POWER_W,
+    CONF_CODE_PRESET,
+    CONF_CODE_TARGET_TEMP,
+    CONF_CODE_TIMER,
     CONF_MAX_TEMP,
     CONF_MIN_TEMP,
-    DEFAULT_DP_CHILD_LOCK,
-    DEFAULT_DP_CURRENT_TEMP,
-    DEFAULT_DP_ENERGY,
-    DEFAULT_DP_FLAME_BRIGHTNESS,
-    DEFAULT_DP_FLAME_EFFECT,
-    DEFAULT_DP_FLAME_SPEED,
-    DEFAULT_DP_HEAT,
-    DEFAULT_DP_POWER,
-    DEFAULT_DP_POWER_W,
-    DEFAULT_DP_PRESET,
-    DEFAULT_DP_TARGET_TEMP,
-    DEFAULT_DP_TIMER,
+    DEFAULT_CODE_CHILD_LOCK,
+    DEFAULT_CODE_CURRENT_TEMP,
+    DEFAULT_CODE_ENERGY,
+    DEFAULT_CODE_FLAME_BRIGHTNESS,
+    DEFAULT_CODE_FLAME_EFFECT,
+    DEFAULT_CODE_FLAME_SPEED,
+    DEFAULT_CODE_HEAT,
+    DEFAULT_CODE_POWER,
+    DEFAULT_CODE_POWER_W,
+    DEFAULT_CODE_PRESET,
+    DEFAULT_CODE_TARGET_TEMP,
+    DEFAULT_CODE_TIMER,
     DEFAULT_MAX_TEMP,
     DEFAULT_MIN_TEMP,
 )
 
-_DP_DEFAULTS: dict[str, str] = {
-    CONF_DP_POWER: DEFAULT_DP_POWER,
-    CONF_DP_HEAT: DEFAULT_DP_HEAT,
-    CONF_DP_TARGET_TEMP: DEFAULT_DP_TARGET_TEMP,
-    CONF_DP_CURRENT_TEMP: DEFAULT_DP_CURRENT_TEMP,
-    CONF_DP_FLAME_BRIGHTNESS: DEFAULT_DP_FLAME_BRIGHTNESS,
-    CONF_DP_FLAME_EFFECT: DEFAULT_DP_FLAME_EFFECT,
-    CONF_DP_FLAME_SPEED: DEFAULT_DP_FLAME_SPEED,
-    CONF_DP_TIMER: DEFAULT_DP_TIMER,
-    CONF_DP_CHILD_LOCK: DEFAULT_DP_CHILD_LOCK,
-    CONF_DP_PRESET: DEFAULT_DP_PRESET,
-    CONF_DP_POWER_W: DEFAULT_DP_POWER_W,
-    CONF_DP_ENERGY: DEFAULT_DP_ENERGY,
+_CODE_DEFAULTS: dict[str, str] = {
+    CONF_CODE_POWER: DEFAULT_CODE_POWER,
+    CONF_CODE_HEAT: DEFAULT_CODE_HEAT,
+    CONF_CODE_TARGET_TEMP: DEFAULT_CODE_TARGET_TEMP,
+    CONF_CODE_CURRENT_TEMP: DEFAULT_CODE_CURRENT_TEMP,
+    CONF_CODE_FLAME_BRIGHTNESS: DEFAULT_CODE_FLAME_BRIGHTNESS,
+    CONF_CODE_FLAME_EFFECT: DEFAULT_CODE_FLAME_EFFECT,
+    CONF_CODE_FLAME_SPEED: DEFAULT_CODE_FLAME_SPEED,
+    CONF_CODE_TIMER: DEFAULT_CODE_TIMER,
+    CONF_CODE_CHILD_LOCK: DEFAULT_CODE_CHILD_LOCK,
+    CONF_CODE_PRESET: DEFAULT_CODE_PRESET,
+    CONF_CODE_POWER_W: DEFAULT_CODE_POWER_W,
+    CONF_CODE_ENERGY: DEFAULT_CODE_ENERGY,
 }
 
 
-def get_dp(entry: ConfigEntry, key: str) -> str | None:
-    """Return the configured DP id for ``key``.
+def get_code(entry: ConfigEntry, key: str) -> str | None:
+    """Return the configured Tuya function code for ``key``.
 
-    An option that has been cleared (empty string) disables that feature and
-    returns ``None``. Options take precedence over the built-in defaults.
+    A cleared option (empty string) disables that feature and returns ``None``.
+    Options take precedence over the built-in defaults.
     """
-    raw = entry.options.get(key, _DP_DEFAULTS.get(key))
+    raw = entry.options.get(key, _CODE_DEFAULTS.get(key))
     if raw is None:
         return None
     text = str(raw).strip()
