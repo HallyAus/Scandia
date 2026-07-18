@@ -21,6 +21,10 @@ Either way you get proper, fireplace-specific entities (flame light, flame
 speed, presets, timer, child lock) rather than the generic controls the official
 Tuya integration produces.
 
+> 📖 **Full step-by-step instructions for both modes:** see
+> **[docs/SETUP.md](docs/SETUP.md)**. The sections below are a condensed
+> overview.
+
 ## Features
 
 | Entity | Platform | What it controls |
