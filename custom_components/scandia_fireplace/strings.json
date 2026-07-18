@@ -1,0 +1,59 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect your Scandia fireplace",
+        "description": "Enter the local connection details for your fireplace. You need the device's IP address, its Tuya Device ID and Local Key. See the integration README for how to obtain the Local Key.",
+        "data": {
+          "model": "Name / model",
+          "host": "IP address",
+          "device_id": "Device ID",
+          "local_key": "Local key",
+          "protocol_version": "Tuya protocol version"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the fireplace. Check the IP address, Device ID, Local Key and protocol version, and make sure Home Assistant is on the same network."
+    },
+    "abort": {
+      "already_configured": "This fireplace is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Scandia fireplace data points",
+        "description": "Map the Tuya data point (DP) IDs to fireplace functions. Leave an optional field blank to disable that feature. Download the integration's diagnostics to see the raw DP IDs your device reports.",
+        "data": {
+          "dp_power": "Power / flame on-off DP",
+          "dp_heat": "Heating element DP",
+          "dp_target_temp": "Target temperature DP",
+          "dp_current_temp": "Current temperature DP",
+          "dp_flame_brightness": "Flame brightness DP",
+          "dp_flame_effect": "Flame effect / colour DP",
+          "dp_flame_speed": "Flame speed DP",
+          "dp_timer": "Countdown timer DP",
+          "dp_child_lock": "Child lock DP",
+          "min_temp": "Minimum target temperature (°C)",
+          "max_temp": "Maximum target temperature (°C)",
+          "scan_interval": "Polling interval (seconds)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "light": {
+      "flame": { "name": "Flame" }
+    },
+    "select": {
+      "flame_speed": { "name": "Flame speed" }
+    },
+    "number": {
+      "timer": { "name": "Auto-off timer" }
+    },
+    "switch": {
+      "child_lock": { "name": "Child lock" }
+    }
+  }
+}

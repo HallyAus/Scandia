@@ -1,0 +1,12 @@
+{
+  "domain": "scandia_fireplace",
+  "name": "Scandia Fireplace",
+  "codeowners": ["@hallyaus"],
+  "config_flow": true,
+  "documentation": "https://github.com/HallyAus/Scandia",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/HallyAus/Scandia/issues",
+  "requirements": ["tinytuya==1.15.1"],
+  "version": "1.0.0"
+}
