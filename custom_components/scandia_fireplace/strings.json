@@ -1,0 +1,100 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sign in to Tuya / Smart Life",
+        "description": "Enter the **user code** from your Smart Life (or Tuya Smart) app. Find it under **Me → ⚙ (Settings) → Account and Security → User Code**. No developer account is needed.",
+        "data": {
+          "user_code": "User code"
+        }
+      },
+      "scan": {
+        "title": "Scan to link your account",
+        "description": "Open the **Smart Life** app, tap **＋ (top right) → Scan**, and scan this QR code. Then press **Submit** below to finish."
+      },
+      "select_device": {
+        "title": "Select your fireplace",
+        "description": "Choose the fireplace from the devices on your account.",
+        "data": {
+          "device_id": "Fireplace"
+        }
+      },
+      "mode": {
+        "title": "Choose how to control the fireplace",
+        "description": "Both use the sign-in you just completed.\n\n**Cloud** — commands go via Tuya's cloud; works from anywhere, no local network setup. Only power and the timer are available in cloud mode.\n\n**Local** — commands go directly over your LAN using the key just retrieved; faster, works without internet, and unlocks the flame, heater and light controls.",
+        "menu_options": {
+          "cloud": "Cloud (via Tuya)",
+          "local": "Local (direct over your network)"
+        }
+      },
+      "local": {
+        "title": "Confirm local connection",
+        "description": "The local key was retrieved automatically. Confirm the fireplace's IP address (auto-detected where possible — otherwise enter it from your router and reserve it), the protocol version, and the device profile that matches your fireplace's controls.",
+        "data": {
+          "host": "IP address",
+          "protocol_version": "Tuya protocol version",
+          "profile": "Fireplace model / profile"
+        }
+      }
+    },
+    "error": {
+      "login_error": "Login failed. Check the user code, make sure you scanned the QR code with the Smart Life app, and try again.",
+      "cannot_connect": "Could not reach the fireplace locally. Check the IP address and protocol version, ensure Home Assistant is on the same network, and fully close the Tuya app while testing."
+    },
+    "abort": {
+      "already_configured": "This fireplace is already configured.",
+      "no_devices": "No devices were found on this account. Add the fireplace to the Smart Life app first.",
+      "no_local_key": "The cloud didn't provide a local key for this device, so local mode isn't available. Remove and re-add it using Cloud mode.",
+      "reauth_successful": "Successfully re-authenticated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Scandia fireplace mapping",
+        "description": "Map each control to its Tuya address — a **function code** (cloud mode, e.g. `switch`) or a **data point number** (local mode, e.g. `1`). The defaults match the Scandia Aurora. Leave an optional field blank to disable that control. Download the integration's diagnostics to see the addresses your device reports.",
+        "data": {
+          "addr_power": "Power (on/off)",
+          "addr_heat": "Heater (Off/Lo/Hi)",
+          "addr_top_light": "Top light colour",
+          "addr_timer": "Countdown timer",
+          "addr_flame_effect": "Flame colour",
+          "addr_flame_log": "Flame log colour"
+        }
+      }
+    }
+  },
+  "entity": {},
+  "services": {
+    "set_state": {
+      "name": "Set state",
+      "description": "Applies several fireplace settings in one command — useful for scenes. Preset values accept either the label shown in Home Assistant ('Colour 4') or the raw device value ('L04'). Colour and heater settings need local mode.",
+      "fields": {
+        "power": {
+          "name": "Power",
+          "description": "Turn the fireplace on or off."
+        },
+        "flame_colour": {
+          "name": "Flame colour",
+          "description": "Flame effect colour, e.g. 'Colour 4'."
+        },
+        "flame_log_colour": {
+          "name": "Flame log colour",
+          "description": "Fuel-bed / ember colour, e.g. 'Colour 4'."
+        },
+        "top_light": {
+          "name": "Top light",
+          "description": "Top-light colour, e.g. 'Yellow' (Aurora profile only)."
+        },
+        "heater": {
+          "name": "Heater",
+          "description": "Heater level, e.g. 'Low (750W)'."
+        },
+        "timer": {
+          "name": "Timer",
+          "description": "Countdown auto-off, e.g. '2 hours' or 'Off'."
+        }
+      }
+    }
+  }
+}

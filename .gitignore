@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Tuya credentials produced by the tinytuya wizard — never commit these
+devices.json
+snapshot.json
+tuya-raw.json
+tinytuya.json
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
