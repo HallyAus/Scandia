@@ -42,11 +42,38 @@ generic controls the official Tuya integration produces.
 | Timer | `select` | Countdown auto-off (Off / 1h–6h) |
 | Flame / log / top-light colour | `sensor` | The currently selected colour (feedback for the buttons) |
 | Endpoint _n_ | `sensor` (diagnostic) | Auto-discovered raw data points, disabled by default |
+| `set_state` | action/service | Apply power + colours + heater + timer in one write (for scenes) |
 
 Controls are created only for the functions your profile maps, so you won't see
 buttons your unit doesn't support. This unit has no dimmer or thermostat, so
 there is no brightness slider or temperature — the flame is entirely preset
 (colour) based.
+
+### Scenes: `scandia_fireplace.set_state`
+
+For scenes, the `scandia_fireplace.set_state` action applies several settings in
+a **single** write to the fireplace, rather than stepping through separate button
+presses:
+
+```yaml
+- action: scandia_fireplace.set_state
+  target:
+    entity_id: switch.scandia_fireplace
+  data:
+    power: true
+    flame_colour: "Colour 4"
+    flame_log_colour: "Colour 4"
+```
+
+All fields (`power`, `flame_colour`, `flame_log_colour`, `top_light`, `heater`,
+`timer`) are optional — only what you supply is written. Preset values accept
+either the label shown in Home Assistant (`Colour 4`) or the raw device value
+(`L04`). When the call switches the fireplace on from cold it sends power first,
+pauses briefly, then applies the presets, since a board that has just woken can
+drop values that arrive in the same command.
+
+> 🗣️ **Voice control:** see **[docs/GOOGLE.md](docs/GOOGLE.md)** for wiring this
+> up to a spoken phrase such as *"Hey Google, it's game day"*.
 
 ## Installation (HACS)
 

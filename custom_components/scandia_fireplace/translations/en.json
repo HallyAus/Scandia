@@ -64,5 +64,37 @@
       }
     }
   },
-  "entity": {}
+  "entity": {},
+  "services": {
+    "set_state": {
+      "name": "Set state",
+      "description": "Applies several fireplace settings in one command — useful for scenes. Preset values accept either the label shown in Home Assistant ('Colour 4') or the raw device value ('L04'). Colour and heater settings need local mode.",
+      "fields": {
+        "power": {
+          "name": "Power",
+          "description": "Turn the fireplace on or off."
+        },
+        "flame_colour": {
+          "name": "Flame colour",
+          "description": "Flame effect colour, e.g. 'Colour 4'."
+        },
+        "flame_log_colour": {
+          "name": "Flame log colour",
+          "description": "Fuel-bed / ember colour, e.g. 'Colour 4'."
+        },
+        "top_light": {
+          "name": "Top light",
+          "description": "Top-light colour, e.g. 'Yellow' (Aurora profile only)."
+        },
+        "heater": {
+          "name": "Heater",
+          "description": "Heater level, e.g. 'Low (750W)'."
+        },
+        "timer": {
+          "name": "Timer",
+          "description": "Countdown auto-off, e.g. '2 hours' or 'Off'."
+        }
+      }
+    }
+  }
 }

@@ -16,6 +16,7 @@ from .coordinator import (
     TokenListener,
     build_manager,
 )
+from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ScandiaConfigEntry) -> b
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    await async_setup_services(hass)
     return True
 
 
@@ -63,8 +65,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ScandiaConfigEntry) -> 
             mq = getattr(coordinator.manager, "mq", None)
             if mq is not None:
                 await hass.async_add_executor_job(mq.stop)
-        elif isinstance(coordinator, ScandiaLocalCoordinator):
-            await coordinator.async_shutdown()
+        # Closes the local socket and cancels any pending confirmation poll.
+        await coordinator.async_shutdown()
     return unload_ok
 
 

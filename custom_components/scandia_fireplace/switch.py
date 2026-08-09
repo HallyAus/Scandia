@@ -36,9 +36,17 @@ class ScandiaPower(ScandiaEntity, SwitchEntity):
         self._attr_unique_id = f"{coordinator.device_id}_power"
 
     @property
-    def is_on(self) -> bool:
-        """Return True when the fireplace is on."""
-        return bool(self.coordinator.read(FN_POWER))
+    def is_on(self) -> bool | None:
+        """Return whether the fireplace is on, or None if it hasn't said.
+
+        Reporting None (unknown) rather than False matters: a status payload
+        that omits the power endpoint means we don't know the state, and
+        claiming "off" there would misrepresent a running fireplace.
+        """
+        value = self.coordinator.read(FN_POWER)
+        if value is None:
+            return None
+        return bool(value)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the fireplace on."""

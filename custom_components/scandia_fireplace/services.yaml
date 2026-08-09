@@ -1,0 +1,37 @@
+set_state:
+  target:
+    device:
+      integration: scandia_fireplace
+    entity:
+      integration: scandia_fireplace
+  fields:
+    power:
+      required: false
+      example: true
+      selector:
+        boolean:
+    flame_colour:
+      required: false
+      example: "Colour 4"
+      selector:
+        text:
+    flame_log_colour:
+      required: false
+      example: "Colour 4"
+      selector:
+        text:
+    top_light:
+      required: false
+      example: "Yellow"
+      selector:
+        text:
+    heater:
+      required: false
+      example: "Low (750W)"
+      selector:
+        text:
+    timer:
+      required: false
+      example: "2 hours"
+      selector:
+        text:

@@ -15,8 +15,9 @@ from tuya_sharing import (
 )
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -49,6 +50,12 @@ _LOGGER = logging.getLogger(__name__)
 CLOUD_INTERVAL = timedelta(seconds=60)
 LOCAL_INTERVAL = timedelta(seconds=30)
 
+# How long to wait after writing before polling the device to confirm. Tuya
+# boards need a moment before their reported state catches up with a command;
+# reading back immediately returns the *pre-command* values, which would undo
+# the optimistic update and make controls appear to snap back.
+CONFIRM_DELAY = 2.0
+
 
 def build_address_map(entry: ConfigEntry) -> dict[str, str]:
     """Resolve semantic function -> address (code or DP) from the options."""
@@ -75,6 +82,7 @@ class ScandiaBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.entry = entry
         self.device_id = entry.data[CONF_DEVICE_ID]
         self.addr = build_address_map(entry)
+        self._confirm_unsub: CALLBACK_TYPE | None = None
         if entry.data.get(CONF_MODE) == MODE_CLOUD:
             self._labels = CLOUD_LABELS
         else:
@@ -105,18 +113,59 @@ class ScandiaBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     async def async_write(self, values: dict[str, Any]) -> None:
-        """Write one or more semantic function values, then refresh."""
+        """Write one or more semantic function values.
+
+        The written values are applied to the cached state straight away so the
+        UI reflects the command immediately, seeded with anything the device
+        echoed back in its reply. A confirmation poll follows a couple of
+        seconds later, once the device has had time to catch up.
+        """
+        skipped = [fn for fn in values if fn not in self.addr]
+        if skipped:
+            _LOGGER.warning(
+                "Ignoring unmapped function(s) %s — not available on this device",
+                ", ".join(sorted(skipped)),
+            )
         addr_values = {
             self.addr[fn]: value for fn, value in values.items() if fn in self.addr
         }
         if not addr_values:
             return
-        await self._send(addr_values)
-        await self.async_request_refresh()
 
-    async def _send(self, addr_values: dict[str, Any]) -> None:
-        """Send address->value pairs to the device (mode-specific)."""
+        echoed = await self._send(addr_values)
+
+        merged = dict(self.data or {})
+        merged.update(addr_values)
+        if echoed:
+            merged.update(echoed)
+        self.async_set_updated_data(merged)
+
+        self._schedule_confirmation()
+
+    async def _send(self, addr_values: dict[str, Any]) -> dict[str, Any] | None:
+        """Send address->value pairs; return any state the device echoed back."""
         raise NotImplementedError
+
+    def _schedule_confirmation(self) -> None:
+        """Poll the device shortly after a write to confirm it took effect."""
+        self._cancel_confirmation()
+
+        async def _confirm(_now) -> None:
+            self._confirm_unsub = None
+            await self.async_request_refresh()
+
+        self._confirm_unsub = async_call_later(self.hass, CONFIRM_DELAY, _confirm)
+
+    def _cancel_confirmation(self) -> None:
+        """Drop any pending confirmation poll."""
+        if self._confirm_unsub is not None:
+            self._confirm_unsub()
+            self._confirm_unsub = None
+
+    async def async_shutdown(self) -> None:
+        """Cancel pending work on unload."""
+        self._cancel_confirmation()
+        await super().async_shutdown()
 
     # -- device info --------------------------------------------------------
     @property
@@ -202,11 +251,12 @@ class ScandiaCloudCoordinator(ScandiaBaseCoordinator):
             raise UpdateFailed(f"Fireplace {self.device_id} is no longer on the account")
         return dict(device.status)
 
-    async def _send(self, addr_values: dict[str, Any]) -> None:
+    async def _send(self, addr_values: dict[str, Any]) -> dict[str, Any] | None:
         commands = [{"code": code, "value": value} for code, value in addr_values.items()]
         await self.hass.async_add_executor_job(
             self.manager.send_commands, self.device_id, commands
         )
+        return None  # the cloud API acknowledges without returning state
 
 
 class DeviceListener(SharingDeviceListener):
@@ -363,10 +413,19 @@ class ScandiaLocalCoordinator(ScandiaBaseCoordinator):
         )
         return True
 
-    async def _send(self, addr_values: dict[str, Any]) -> None:
-        await self.hass.async_add_executor_job(
+    async def _send(self, addr_values: dict[str, Any]) -> dict[str, Any] | None:
+        reply = await self.hass.async_add_executor_job(
             self._device.set_multiple_values, addr_values
         )
+        if isinstance(reply, dict):
+            if "Error" in reply:
+                raise HomeAssistantError(
+                    f"Fireplace rejected the command: {reply['Error']}"
+                )
+            dps = reply.get("dps")
+            if isinstance(dps, dict):
+                return dps
+        return None
 
     async def async_shutdown(self) -> None:
         """Close the local socket on unload."""
