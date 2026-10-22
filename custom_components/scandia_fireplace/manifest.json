@@ -8,6 +8,6 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/HallyAus/Scandia/issues",
   "loggers": ["tinytuya", "tuya_sharing"],
-  "requirements": ["tuya-device-sharing-sdk==0.2.10", "tinytuya==1.15.1"],
+  "requirements": ["tuya-device-sharing-sdk==0.2.15", "tinytuya==1.15.1"],
   "version": "4.2.0"
 }
