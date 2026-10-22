@@ -1,7 +1,5 @@
 set_state:
   target:
-    device:
-      integration: scandia_fireplace
     entity:
       integration: scandia_fireplace
   fields:
